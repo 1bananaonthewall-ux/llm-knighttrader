@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM KnightTrader — Cursor + OpenRouter Setup Tutorial</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #c9d1d9; display: flex; justify-content: center; min-height: 100vh; margin: 0; padding: 40px 20px; }
+  .container { max-width: 700px; width: 100%; }
+  h1 { color: #58a6ff; font-size: 24px; margin-bottom: 8px; }
+  .subtitle { color: #8b949e; font-size: 14px; margin-bottom: 32px; }
+  .step { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px 24px; margin-bottom: 16px; }
+  .step-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .step-num { background: #238636; color: white; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+  .step-title { font-size: 16px; font-weight: 600; color: #f0f6fc; }
+  .step-content { font-size: 14px; line-height: 1.7; color: #c9d1d9; }
+  .step-content code { background: #1c2128; padding: 2px 6px; border-radius: 4px; font-size: 13px; color: #79c0ff; }
+  .step-content pre { background: #1c2128; border-radius: 8px; padding: 16px; overflow-x: auto; font-size: 13px; line-height: 1.5; margin: 12px 0; }
+  .step-content pre code { background: none; padding: 0; color: #c9d1d9; }
+  .copy-btn { background: #238636; color: white; border: none; border-radius: 6px; padding: 10px 20px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 20px; }
+  .copy-btn:hover { background: #2ea043; }
+  .copied { background: #1f6feb !important; }
+  .note { background: #1c2128; border-left: 3px solid #d29922; padding: 12px 16px; border-radius: 0 6px 6px 0; margin: 12px 0; font-size: 13px; color: #e3b341; }
+  .warn { background: #1c2128; border-left: 3px solid #f85149; padding: 12px 16px; border-radius: 0 6px 6px 0; margin: 12px 0; font-size: 13px; color: #f85149; }
+  a { color: #58a6ff; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .footer { margin-top: 32px; font-size: 12px; color: #484f58; text-align: center; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🚀 Cursor + OpenRouter Setup for LLM KnightTrader</h1>
+  <p class="subtitle">Free setup with Owl Alpha model — get running in ~5 minutes</p>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">1</div>
+      <div class="step-title">Install Cursor</div>
+    </div>
+    <div class="step-content">
+      <p>Download and install Cursor (free):</p>
+      <pre><code>Go to: cursor.com/download
+Windows: run the .exe installer
+Mac: drag .dmg to Applications</code></pre>
+      <p>Open Cursor and sign in with your free Cursor account.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">2</div>
+      <div class="step-title">Get OpenRouter API Key (Free)</div>
+    </div>
+    <div class="step-content">
+      <p>1. Go to <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></p>
+      <p>2. Sign up / log in</p>
+      <p>3. Click "Create Key" — copy the key (starts with <code>sk-or-...</code>)</p>
+      <div class="note">Free tier gives you up to 1,000 requests/day with Owl Alpha. No credit card needed.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">3</div>
+      <div class="step-title">Configure Cursor for OpenRouter (Custom Base URL)</div>
+    </div>
+    <div class="step-content">
+      <p>In Cursor, open Settings:</p>
+      <pre><code>Windows: Ctrl + Shift + J
+Mac: Cmd + Shift + J</code></pre>
+      <p>Navigate to <strong>Agents</strong> section, then find <strong>Model</strong> or add a custom provider:</p>
+      <p>Set these values:</p>
+      <pre><code>Base URL: https://openrouter.ai/api/v1
+API Key:  sk-or-your-key-here
+Model:   openrouter/owl-alpha</code></pre>
+      <div class="warn">If Cursor doesn't have a custom provider option in settings, you can set it via environment variables or MCP config. See note below.</div>
+      <p><strong>Alternative method</strong> — set environment variables before launching Cursor:</p>
+      <pre><code># Windows (PowerShell):
+$env:OPENAI_API_KEY = "sk-or-your-key-here"
+$env:OPENAI_BASE_URL = "https://openrouter.ai/api/v1"
+
+# Mac/Linux:
+export OPENAI_API_KEY="sk-or-your-key-here"
+export OPENAI_BASE_URL="https://openrouter.ai/api/v1"</code></pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">4</div>
+      <div class="step-title">Enable "Run Everything" Mode (Auto-Run)</div>
+    </div>
+    <div class="step-content">
+      <p>This lets Cursor work autonomously without asking you to click "Run" every time:</p>
+      <pre><code>1. Open Cursor Settings (Ctrl/Cmd + Shift + J)
+2. Go to Agents → Approvals & Execution
+3. Find "Auto-Run" mode
+4. Select "Run Everything"</code></pre>
+      <div class="note">⚠️ "Run Everything" lets the agent execute any terminal command without approval. Only use in trusted environments. Cursor creates checkpoints before changes so you can roll back if needed.</div>
+      <p>Now Cursor will run commands, install packages, and execute scripts automatically — no manual approval needed.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">5</div>
+      <div class="step-title">Clone and Run LLM KnightTrader</div>
+    </div>
+    <div class="step-content">
+      <p>Open a terminal in Cursor and run:</p>
+      <pre><code>git clone https://github.com/1bananaonthewall-ux/llm-knighttrader.git
+cd llm-knighttrader
+python -m venv .venv
+
+# Windows:
+.venv\Scripts\activate
+
+# Mac/Linux:
+source .venv/bin/activate
+
+pip install -r requirements.txt</code></pre>
+      <p>Then paste this prompt into Cursor chat:</p>
+      <pre><code>Read ReadMe.tx in full, then set up this project.
+Ask me for my BloFin API keys and OpenRouter key in chat.
+Use OpenRouter with base URL https://openrouter.ai/api/v1 and model openrouter/owl-alpha.
+After setup, verify end-to-end, then STOP the stack.
+Enable auto-run so you don't need my approval for commands.</code></pre>
+      <p>Cursor will ask for your keys, then handle everything automatically — install, configure, verify, and stop.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">6</div>
+      <div class="step-title">Daily Use</div>
+    </div>
+    <div class="step-content">
+      <p>After setup, you'll have desktop shortcuts:</p>
+      <pre><code>Start LLM KnightTrader.lnk  → kills old instances, starts fresh
+Stop LLM KnightTrader.lnk   → stops everything</code></pre>
+      <p>Or from command line:</p>
+      <pre><code>python scripts/stack_launcher.py start
+python scripts/stack_launcher.py stop</code></pre>
+      <p>Dashboard: <code>http://127.0.0.1:8765</code></p>
+    </div>
+  </div>
+
+  <button class="copy-btn" onclick="copyAll()">📋 Copy Full Tutorial</button>
+
+  <div class="footer">
+    LLM KnightTrader — autonomous AI crypto trading<br>
+    github.com/1bananaonthewall-ux/llm-knighttrader
+  </div>
+</div>
+
+<script>
+function copyAll() {
+  const text = `🚀 Cursor + OpenRouter Setup for LLM KnightTrader
+Free setup with Owl Alpha model — get running in ~5 minutes
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. INSTALL CURSOR (free)
+   • Go to cursor.com/download
+   • Windows: run the .exe installer
+   • Mac: drag .dmg to Applications
+   • Open Cursor and sign in
+
+2. GET OPENROUTER API KEY (free)
+   • Go to openrouter.ai/keys
+   • Sign up / log in
+   • Create Key → copy (starts with sk-or-...)
+   • Free tier: 1,000 req/day, no credit card
+
+3. CONFIGURE CURSOR FOR OPENROUTER
+   • Open Cursor Settings: Ctrl/Cmd + Shift + J
+   • Go to Agents section
+   • Add custom provider / model:
+     Base URL: https://openrouter.ai/api/v1
+     API Key:  sk-or-your-key-here
+     Model:   openrouter/owl-alpha
+   • Alternative: set env vars before launching Cursor:
+     OPENAI_API_KEY=sk-or-your-key
+     OPENAI_BASE_URL=https://openrouter.ai/api/v1
+
+4. ENABLE "RUN EVERYTHING" MODE
+   • Cursor Settings → Agents → Approvals & Execution
+   • Auto-Run mode → select "Run Everything"
+   • Now Cursor runs commands without asking permission
+
+5. CLONE & RUN LLM KNIGHTTRADER
+   In Cursor terminal:
+   git clone https://github.com/1bananaonthewall-ux/llm-knighttrader.git
+   cd llm-knighttrader
+   python -m venv .venv
+   .venv\\Scripts\\activate  (or source .venv/bin/activate)
+   pip install -r requirements.txt
+
+   Then paste this prompt:
+   "Read ReadMe.tx in full, then set up this project.
+   Ask me for my BloFin API keys and OpenRouter key in chat.
+   Use OpenRouter with base URL https://openrouter.ai/api/v1 and model openrouter/owl-alpha.
+   After setup, verify end-to-end, then STOP the stack.
+   Enable auto-run so you don't need my approval for commands."
+
+6. DAILY USE
+   Desktop shortcuts: Start / Stop LLM KnightTrader
+   Or: python scripts/stack_launcher.py start
+   Dashboard: http://127.0.0.1:8765`;
+
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.querySelector('.copy-btn');
+    btn.textContent = '✅ Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '📋 Copy Full Tutorial'; btn.classList.remove('copied'); }, 2500);
+  });
+}
+</script>
+</body>
+</html>
