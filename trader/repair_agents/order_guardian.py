@@ -36,7 +36,7 @@ from trader.repair_agent import (
 
 AGENT_NAME = "order_guardian"
 LABEL = "Repair[OrderGuardian]"
-LOOP_SEC = 30.0
+LOOP_SEC = 15.0
 
 ORDER_GUARDIAN_SYSTEM = (
     "You are the LLM KnightTrader **Order Guardian** — a trade operations technician.\n\n"
@@ -148,6 +148,27 @@ def run_cycle(client, llm, state: dict) -> None:
         )
     except Exception as exc:
         log_warn(LABEL, "Dashboard section scan crashed", str(exc)[:200])
+
+    # Cross-agent escalation: if another tech emitted an "Incident unresolved"
+    # signal, we join immediately (even if there are no trade errors/orders).
+    try:
+        recent_titles = {str(e.get("title") or "") for e in get_recent(80) if e.get("type") == "error"}
+    except Exception:
+        recent_titles = set()
+    if "Incident unresolved" in recent_titles:
+        try:
+            maybe_autorepair_global(
+                client,
+                llm,
+                state,
+                label=LABEL,
+                max_incidents=1,
+                cooldown_sec=180.0,
+            )
+            state["repairs_attempted"] += 1
+            return
+        except Exception as exc:
+            log_warn(LABEL, "Escalation autorepair failed", str(exc)[:200])
 
     account = _get_account_snapshot(client)
     if not account:

@@ -42,7 +42,7 @@ from trader.repair_agent import (
 
 AGENT_NAME = "code_fixer"
 LABEL = "Repair[CodeFixer]"
-LOOP_SEC = 30.0
+LOOP_SEC = 15.0
 
 SYSTEM = (
     "You are the LLM KnightTrader **Code Fixer** — a master software engineer.\n\n"
@@ -182,6 +182,25 @@ def run_cycle(client, llm, state: dict) -> None:
         )
     except Exception as exc:
         log_warn(LABEL, "Dashboard section scan crashed", str(exc)[:200])
+
+    # Cross-agent escalation: if another tech emitted an "Incident unresolved"
+    # signal, we join immediately (within this agent's loop window).
+    try:
+        recent_err_titles = {str(e.get("title") or "") for e in get_recent_errors(80)}
+    except Exception:
+        recent_err_titles = set()
+    if "Incident unresolved" in recent_err_titles:
+        try:
+            maybe_autorepair_global(
+                client,
+                llm,
+                state,
+                label=LABEL,
+                max_incidents=1,
+                cooldown_sec=180.0,
+            )
+        except Exception as exc:
+            log_warn(LABEL, "Escalation autorepair failed", str(exc)[:200])
 
     bugs = _find_bugs()
     if not bugs:
