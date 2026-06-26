@@ -1,0 +1,11 @@
+data/
+pids/
+__pycache__/
+*.pyc
+.venv/
+.env
+credentials/blofin.txt
+credentials/*.local.*
+*.pid
+.DS_Store
+Thumbs.db

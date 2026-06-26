@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LLM KnightTrader</title>
+  <link rel="stylesheet" href="/static/style.css?v=21" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>LLM KnightTrader</h1>
+      <p class="subtitle">BloFin futures · Cloud LLM · Live dashboard</p>
+      <div class="stack-control" id="stack-control">
+        <div class="stack-status-item" title="Trader bot process">
+          <span class="stack-dot" id="trader-dot" data-state="offline"></span>
+          <span class="stack-label" id="trader-status-label">Trader offline</span>
+        </div>
+        <button type="button" id="restart-stack-btn" class="stack-restart-btn">Restart bots</button>
+      </div>
+    </div>
+    <div class="metrics" id="metrics">
+      <div class="metric"><span class="label">Equity</span><span class="value" id="equity">—</span></div>
+      <div class="metric"><span class="label">Available</span><span class="value" id="available">—</span></div>
+      <div class="metric"><span class="label">Unrealized</span><span class="value" id="upl-total">—</span></div>
+      <div class="metric"><span class="label">Target</span><span class="value" id="target">—</span></div>
+      <div class="metric metric-clickable" id="baseline-metric" title="Click to set baseline to current equity (or enter a custom $)">
+        <span class="label">Baseline Δ</span>
+        <span class="value" id="baseline-delta">—</span>
+        <span class="metric-hint" id="baseline-from">from —</span>
+      </div>
+      <div class="metric"><span class="label">Cycles</span><span class="value" id="cycles">—</span></div>
+      <div class="metric"><span class="label">LLM Keys</span><span class="value" id="llm-keys">—</span></div>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="panel chat-panel">
+      <h2>Talk to LLM KnightTrader</h2>
+      <div id="chat-log" class="chat-log"></div>
+      <form id="chat-form" class="chat-form">
+        <input id="chat-input" type="text" placeholder="Ask about strategy, positions, research..." autocomplete="off" />
+        <button type="submit">Send</button>
+      </form>
+    </section>
+
+    <section class="panel activity-panel">
+      <h2>Activity Log</h2>
+      <div id="activity-log" class="scroll log"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Open Positions <span id="positions-count" class="panel-count">0</span></h2>
+      <div id="positions" class="scroll"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Recent Trades</h2>
+      <div id="trades" class="scroll"></div>
+    </section>
+
+    <section class="panel wide">
+      <h2>Research & Strategy</h2>
+      <div id="research" class="scroll"></div>
+    </section>
+
+    <section class="panel wide">
+      <h2>Last LLM Decision</h2>
+      <pre id="decision" class="code-block">—</pre>
+    </section>
+  </main>
+
+  <footer>
+    <span id="conn-status" class="status offline">Connecting…</span>
+    <span id="mission"></span>
+  </footer>
+
+  <script src="/static/app.js?v=21"></script>
+</body>
+</html>

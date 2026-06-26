@@ -1,0 +1,254 @@
+================================================================================
+LLM KNIGHTTRADER — AGENT SETUP BIBLE
+================================================================================
+If you are an AI agent: read this entire file first, then execute the steps in
+order. This is the canonical runbook to reproduce the operator's live stack.
+
+Project: autonomous BloFin USDT-margined perpetual futures bot + live dashboard.
+Stack: Python 3.12+, FastAPI dashboard, multi-provider LLM (OpenRouter/Groq/Gemini),
+       account cache guardian, auto-harvest, LLM repair triage, stack watchdog.
+
+Dashboard: http://127.0.0.1:8765
+Default target equity: $1,000,000 (game mode, micro account friendly)
+
+================================================================================
+0. QUICK START (WINDOWS — MATCHES OPERATOR'S SETUP)
+================================================================================
+
+1. Clone repo and cd into project root.
+
+2. Install Python 3.12+ (64-bit). Set env if not on PATH:
+     setx KNIGHTTRADER_PYTHON "C:\Path\To\Python312\python.exe"
+
+3. Create venv (recommended) and install deps:
+     python -m venv .venv
+     .venv\Scripts\activate
+     pip install -r requirements.txt
+
+4. Copy credential templates (NEVER commit real keys):
+     copy credentials\blofin.example.txt credentials\blofin.txt
+     copy .env.example .env
+   Edit credentials\blofin.txt — add BloFin API Key, Secret Key, Passphrase.
+   Edit .env — add at least one OPENROUTER_API_KEY (sk-or-...).
+
+5. Point the app at your creds (optional if using default paths):
+     setx BLOFIN_CREDENTIALS_PATH "%CD%\credentials\blofin.txt"
+
+6. Start everything (dashboard + one trader):
+     launcher\Start LLM KnightTrader.bat
+   OR:
+     powershell -NoProfile -ExecutionPolicy Bypass -File scripts\start_core.ps1 -OpenBrowser
+
+7. Verify:
+     curl http://127.0.0.1:8765/api/health
+     curl http://127.0.0.1:8765/api/stack/status
+   Dashboard header: trader dot green, equity updating.
+
+8. Enable auto git sync (optional, operator uses this):
+     powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup_git_hooks.ps1
+
+================================================================================
+1. REPOSITORY LAYOUT
+================================================================================
+
+trader/           Main autonomous loop (trader.agent)
+dashboard/        FastAPI + WebSocket UI (dashboard.server)
+blofin/           Exchange client + account cache / stream guardian
+llm/              Multi-provider LLM wrapper (chat_race, failover)
+monitor/          Optional health monitor (not started by default stack)
+scripts/          start/stop, kill agents, baseline tools
+launcher/         Desktop-friendly .bat starters
+credentials/      LOCAL ONLY — blofin.txt + .env (gitignored)
+data/             LOCAL ONLY — state, logs, activity (gitignored)
+
+Key modules:
+  trader/agent.py          Trading cycle, harvest, proactive repair
+  trader/repair.py         LLM + script stack repair
+  trader/stack_watchdog.py Autonomous diagnose + start trader if offline
+  trader/stack_control.py  Kill bots, restart single trader (Python 3.12)
+  trader/baseline.py       Performance baseline / Baseline Δ tracking
+  trader/harvest.py        NTP-based winner harvest (unrealizedPnlRatio)
+  blofin/account_cache.py  Live API validation, PnL, equity guardian
+
+================================================================================
+2. CREDENTIALS (REQUIRED)
+================================================================================
+
+BLOFIN (required for live trading)
+  File: credentials/blofin.txt  (or BLOFIN_CREDENTIALS_PATH)
+  Format (one per line, colon-separated):
+    API Key: YOUR_KEY
+    Secret Key: YOUR_SECRET
+    Passphrase: YOUR_PASSPHRASE
+
+LLM (at least one required)
+  .env in project root OR environment variables:
+    OPENROUTER_API_KEY=sk-or-...
+    GROQ_API_KEY=...          (optional fallback)
+    GEMINI_API_KEY=...        (optional fallback)
+    GOOGLE_API_KEY=...        (alias for Gemini)
+
+  OpenRouter: free models are used by default (see llm/wrapper.py).
+  Multiple OPENROUTER keys: set OPENROUTER_API_KEY and add more keys to .env as
+  OPENROUTER_API_KEY_2 etc. — discover_openrouter_keys() scans .env and files.
+
+NEVER commit: credentials/blofin.txt, .env, data/, API keys in activity logs.
+
+================================================================================
+3. ENVIRONMENT VARIABLES (OPTIONAL)
+================================================================================
+
+KNIGHTTRADER_PYTHON          Path to python.exe (default: python on PATH)
+BLOFIN_CREDENTIALS_PATH      Path to BloFin key file
+KNIGHTTRADER_DASHBOARD_HOST  Default 127.0.0.1
+KNIGHTTRADER_DASHBOARD_PORT  Default 8765
+KNIGHTTRADER_TARGET_EQUITY   Default 1000000
+KNIGHTTRADER_LOOP_SEC        Trader cycle interval (default 60)
+KNIGHTTRADER_HARVEST_NTP_PCT Harvest winners at +NTP% (default 5.0)
+KNIGHTTRADER_LLM_HTTP_TIMEOUT_SEC  LLM HTTP patience (default 600)
+KNIGHTTRADER_REPAIR_LLM_PARALLEL   Parallel repair workers (default 3)
+KNIGHTTRADER_TRADE_MODE      game (default) — auto leverage ladder
+KNIGHTTRADER_MAX_LEVERAGE    Default 50
+
+================================================================================
+4. RUNNING THE STACK
+================================================================================
+
+RECOMMENDED (operator default):
+  launcher\Start LLM KnightTrader.bat
+  → starts dashboard.server + trader.agent
+  → opens http://127.0.0.1:8765
+
+Manual modules:
+  python -m dashboard.server
+  python -m trader.agent
+
+Restart bots from dashboard (kills trader/monitor/watchers, starts one trader):
+  POST http://127.0.0.1:8765/api/stack/restart
+
+Stack status:
+  GET http://127.0.0.1:8765/api/stack/status
+
+Stop:
+  launcher\Stop LLM KnightTrader.bat
+  OR scripts\stop_all.ps1 / scripts\kill_all.ps1
+
+IMPORTANT: trader.agent MUST run under Python 3.12+ (stack_control uses
+KNIGHTTRADER_PYTHON). Dashboard can use venv python; trader subprocess uses
+the configured 3.12 path.
+
+================================================================================
+5. DASHBOARD FEATURES
+================================================================================
+
+URL: http://127.0.0.1:8765
+
+- Live equity, available, unrealized PnL (WebSocket + API guardian)
+- Baseline Δ — click metric to set baseline to current equity or custom $
+- Chat with LLM KnightTrader (instructions wired to trader loop)
+- Stack status + "Restart bots" button
+- Activity log, positions, trades, last LLM decision
+
+Chat commands:
+  "set baseline" / "reset baseline"     → lock baseline at current equity
+  "set baseline to 3.75"                → lock at specific $
+
+API:
+  GET  /api/status
+  GET  /api/account
+  GET  /api/stack/status
+  POST /api/stack/restart
+  POST /api/stack/repair
+  POST /api/baseline/set   {"use_current": true} or {"equity": 3.29}
+  POST /api/chat           {"message": "..."}
+
+================================================================================
+6. ARCHITECTURE (HOW IT BEHAVES LIVE)
+================================================================================
+
+Trader loop (every KNIGHTTRADER_LOOP_SEC):
+  1. Refresh account (cache + live API guardian)
+  2. repair_stack — kill duplicate traders, triage errors
+  3. Auto-harvest winners at +NTP% (margin ROI, not price %)
+  4. Proactive repairs on harvest gaps / LLM-flagged anomalies
+  5. LLM decision (chat_race across providers) → execute trades
+  6. Learn from cycle, snapshot baseline progress
+
+Dashboard background:
+  - Account stream guardian (~3s): compare display vs live BloFin
+  - Stack watchdog (~30s): trader offline → start_single_trader()
+  - Activity WebSocket to UI
+
+Repair policy (trader/repair.py):
+  - Script first (deterministic playbooks)
+  - Repair LLM for novel issues (trade failures, bugs, harvest gaps)
+  - No short timeouts — parallel LLM workers race until response
+  - Known maintenance (stale cache) stays script-only
+
+NTP / harvest:
+  position_ntp_pct = unrealizedPnlRatio * 100  (exchange field)
+  Harvest when NTP >= KNIGHTTRADER_HARVEST_NTP_PCT (default 5%)
+
+================================================================================
+7. TROUBLESHOOTING
+================================================================================
+
+Trader offline / exits immediately:
+  - Check data\logs\trader.err
+  - python -m trader.agent   (run foreground to see traceback)
+  - Dashboard stack watchdog should auto-start; verify stack_control.py
+
+Equity / available wrong on dashboard:
+  - Guardian refreshes from live API; wait ~8s
+  - POST /api/stack/repair or restart trader
+
+"Repair LLM" loops:
+  - Should be fixed: noise filtered, no 25s timeout
+  - Check activity.jsonl for phase=stack_watchdog vs trader_offline
+
+Rate limited (BloFin 403):
+  - Bot waits and uses cache; do not hammer API
+
+LLM all providers failed:
+  - Verify OPENROUTER_API_KEY in .env
+  - llm.wait_for_provider blocks until cooldown clears
+
+Duplicate traders:
+  - Click Restart bots on dashboard
+  - python scripts\kill_agents.py
+
+================================================================================
+8. DEVELOPMENT & GIT AUTO-SYNC
+================================================================================
+
+Setup once after clone:
+  powershell -File scripts\setup_git_hooks.ps1
+
+This enables:
+  - .githooks/post-commit → git push after every commit
+  - .cursor/hooks (stop) → auto commit + push when Cursor agent finishes
+
+Manual sync:
+  powershell -File scripts\auto_sync_git.ps1 -Message "describe change"
+
+Public repo: https://github.com/1bananaonthewall-ux/llm-knighttrader
+(If forked, update remote URL in your clone.)
+
+================================================================================
+9. AGENT CHECKLIST (COPY/PASTE FOR NEW SESSIONS)
+================================================================================
+
+[ ] Read this file (ReadMe.tx)
+[ ] Python 3.12+ and pip install -r requirements.txt
+[ ] credentials/blofin.txt and .env configured (not committed)
+[ ] start_core.ps1 or Start LLM KnightTrader.bat
+[ ] GET /api/health and /api/stack/status OK
+[ ] Trader online, dashboard shows equity
+[ ] After code changes: commit + push (or rely on auto_sync hook)
+
+Mission: grow BloFin futures account toward KNIGHTTRADER_TARGET_EQUITY using
+LLM decisions, BloHunter-style harvest discipline, and autonomous repair.
+
+================================================================================
+END ReadMe.tx
+================================================================================

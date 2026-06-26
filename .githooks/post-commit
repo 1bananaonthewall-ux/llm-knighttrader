@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+# Push to origin after every successful commit (if remote configured).
+branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" || exit 0
+remote="$(git remote get-url origin 2>/dev/null)" || exit 0
+if [ -z "$branch" ] || [ -z "$remote" ]; then
+  exit 0
+fi
+git push origin "$branch" 2>/dev/null || git push -u origin "$branch" 2>/dev/null || true
