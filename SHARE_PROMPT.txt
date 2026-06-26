@@ -64,6 +64,7 @@ STEP 3 — VERIFY
   - GET http://127.0.0.1:8765/api/health
   - GET http://127.0.0.1:8765/api/stack/status → trader online
   - Dashboard shows equity updating
+  - Desktop should have: "Start LLM KnightTrader" and "Stop LLM KnightTrader" shortcuts
   - If 403/geo errors: fix ProtonVPN exit country and restart
 
 ---

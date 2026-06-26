@@ -10,3 +10,7 @@ Before running anything, you **must ask the user** for:
 
 ProtonVPN Free: use **Netherlands, Switzerland, Poland, Romania, Norway, or Japan** for BloFin.  
 Do **not** use **US, Canada, Singapore, or Mexico** as VPN exit for BloFin.
+
+First successful start creates desktop shortcuts: **Start LLM KnightTrader** and **Stop LLM KnightTrader**.
+
+Share prompt for others: **SHARE_PROMPT.txt** in repo root.
