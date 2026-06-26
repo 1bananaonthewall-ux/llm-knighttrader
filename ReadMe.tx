@@ -12,6 +12,63 @@ Dashboard: http://127.0.0.1:8765
 Default target equity: $1,000,000 (game mode, micro account friendly)
 
 ================================================================================
+*** AI AGENTS: ASK THE USER BEFORE YOU RUN ANYTHING ***
+================================================================================
+You MUST NOT assume credentials exist. Before install/start, ask the human:
+
+  A) BLOFIN API CREDENTIALS (required for live trading)
+     - API Key
+     - Secret Key
+     - Passphrase
+     Guide them to create credentials/blofin.txt locally (NEVER commit, NEVER
+     paste secrets into git or public chat). Format:
+       API Key: ...
+       Secret Key: ...
+       Passphrase: ...
+     BloFin API keys are created at: https://blofin.com (Account → API)
+
+  B) LLM API KEY (required — at least one)
+     - OPENROUTER_API_KEY (recommended; free models supported)
+     - Optional: GROQ_API_KEY, GEMINI_API_KEY / GOOGLE_API_KEY
+     Guide them to .env in project root (gitignored).
+
+  C) LOCATION + VPN (required if user is in a restricted region)
+     Ask: "What country are you physically in?"
+     Ask: "Will API traffic exit through ProtonVPN? If yes, which country/server?"
+     BloFin blocks many jurisdictions (IP geolocation). Official list is in
+     BloFin Terms of Use — verify current text:
+       https://blofin.com/en/support/Terms/7296238795279-TERMS-OF-USE
+
+     Commonly RESTRICTED on BloFin (do NOT use as VPN exit for this bot):
+       United States, Canada, China, India, Singapore, United Arab Emirates,
+       Iran, Iraq, North Korea, Cuba, Belarus, Serbia, Crimea/Donetsk/Luhansk,
+       and other sanctioned / listed jurisdictions in BloFin Section 6.
+
+     PROTONVPN — which exits are OK vs NOT for BloFin:
+     ProtonVPN Free tier countries (2026): US, Netherlands, Japan, Poland,
+       Romania, Norway, Switzerland, Singapore, Mexico, Canada.
+
+       USE for BloFin (Free tier):  Netherlands, Switzerland, Poland, Romania,
+         Norway, Japan
+       DO NOT USE for BloFin:      United States, Canada, Singapore, Mexico
+
+     ProtonVPN Plus (paid): connect to a supported EU country NOT in BloFin's
+       restricted list (e.g. Germany, Netherlands, Austria, Poland, Portugal).
+       Avoid: US, Canada, Singapore, Belarus, Serbia, and any BloFin-restricted
+       country. In the Proton app: Countries → pick exit → confirm before start.
+
+     The trader machine AND VPN exit must stay consistent while the bot runs.
+     If API returns 403/geo errors: wrong VPN exit — switch server and restart.
+
+     Legal: bypassing geo-blocks may violate BloFin Terms; user assumes all risk.
+     You are helping with technical setup, not legal advice.
+
+  D) Confirm files exist before start:
+     - credentials/blofin.txt populated
+     - .env with OPENROUTER_API_KEY (or fallback LLM key)
+     - VPN connected to allowed exit (if needed)
+
+================================================================================
 0. QUICK START (WINDOWS — MATCHES OPERATOR'S SETUP)
 ================================================================================
 
@@ -239,8 +296,11 @@ Public repo: https://github.com/1bananaonthewall-ux/llm-knighttrader
 ================================================================================
 
 [ ] Read this file (ReadMe.tx)
+[ ] ASK USER: BloFin API Key + Secret + Passphrase → credentials/blofin.txt
+[ ] ASK USER: LLM key(s) → .env
+[ ] ASK USER: home country + ProtonVPN exit country (if VPN needed)
+[ ] Confirm VPN exit is NOT a BloFin-restricted country (see section above)
 [ ] Python 3.12+ and pip install -r requirements.txt
-[ ] credentials/blofin.txt and .env configured (not committed)
 [ ] start_core.ps1 or Start LLM KnightTrader.bat
 [ ] GET /api/health and /api/stack/status OK
 [ ] Trader online, dashboard shows equity
