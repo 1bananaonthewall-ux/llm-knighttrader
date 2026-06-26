@@ -186,10 +186,37 @@ def run_cycle(client, llm, state: dict) -> None:
     # Cross-agent escalation: if another tech emitted an "Incident unresolved"
     # signal, we join immediately (within this agent's loop window).
     try:
-        recent_err_titles = {str(e.get("title") or "") for e in get_recent_errors(80)}
+        # Trigger only for NEW incident fingerprints to avoid duplicate work.
+        recent_errors = get_recent_errors(120)
+        unresolved = [e for e in recent_errors if str(e.get("title") or "") == "Incident unresolved"]
+
+        def _extract_fp(ev: dict) -> str:
+            data = ev.get("data") or {}
+            fp = str(data.get("incident_fingerprint") or "").strip()
+            if fp:
+                return fp
+            detail = str(ev.get("detail") or "")
+            m = re.search(r"error=([0-9a-f]{16})", detail)
+            return m.group(1) if m else ""
+
+        seen_fps = dict(state.get("_incident_escalation_seen") or {})
+        now = time.time()
+        new_fp = ""
+
+        for ev in reversed(unresolved):
+            fp = _extract_fp(ev)
+            if not fp:
+                continue
+            last = float(seen_fps.get(fp) or 0.0)
+            if now - last < 120.0:
+                continue
+            seen_fps[fp] = now
+            new_fp = fp
+            break
     except Exception:
-        recent_err_titles = set()
-    if "Incident unresolved" in recent_err_titles:
+        new_fp = ""
+
+    if new_fp:
         try:
             maybe_autorepair_global(
                 client,
@@ -199,6 +226,7 @@ def run_cycle(client, llm, state: dict) -> None:
                 max_incidents=1,
                 cooldown_sec=180.0,
             )
+            state["_incident_escalation_seen"] = seen_fps
         except Exception as exc:
             log_warn(LABEL, "Escalation autorepair failed", str(exc)[:200])
 
