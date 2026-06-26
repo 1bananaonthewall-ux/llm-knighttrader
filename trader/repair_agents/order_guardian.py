@@ -239,8 +239,28 @@ def run_cycle(client, llm, state: dict) -> None:
     if has_missing_tpsl and positions:
         pos = positions[0]
         inst = pos.get("instId", "")
-        side = pos.get("tdSide", pos.get("side", "buy"))
-        contracts = str(pos.get("sz", pos.get("contracts", pos.get("size", ""))))
+        # Normalize TP/SL params:
+        # - dashboard/account caches use "long"/"short"
+        # - TP/SL attach expects "buy"/"sell"
+        # - exchange expects a positive contracts/order size
+        side_raw = str(pos.get("tdSide", pos.get("side", "buy")) or "").strip().lower()
+        if side_raw in ("buy", "long"):
+            side = "buy"
+        elif side_raw in ("sell", "short"):
+            side = "sell"
+        else:
+            side = side_raw or "buy"
+
+        sz_raw = pos.get("sz", pos.get("contracts", pos.get("size", "")))
+        try:
+            sz_val = float(sz_raw)
+            sz_abs = abs(sz_val)
+        except (TypeError, ValueError):
+            sz_abs = 0.0
+        if hasattr(client, "_format_order_size") and sz_abs > 0:
+            contracts = client._format_order_size(inst, sz_abs)
+        else:
+            contracts = str(sz_abs if sz_abs > 0 else sz_raw)
         incident = {
             "phase": "tpsl_failed",
             "error": f"missing TP/SL on {inst}",

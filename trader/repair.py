@@ -12,7 +12,7 @@ from typing import Any
 from activity_log import get_recent, log_event
 from config import ACTIVITY_LOG, DATA_DIR, LEVERAGE_LADDER, REPAIR_LLM_PARALLEL, TRADE_MAX_LEVERAGE
 from trader.health import kill_duplicate_traders
-from trader.learning import append_lesson, lessons_digest
+from trader.learning import append_lesson, append_lesson_once_per_interval, lessons_digest
 from trader.tpsl import attach_tpsl_safe, resolve_mark_price
 
 _LAST_SCAN_FILE = DATA_DIR / "last_scan.json"
@@ -543,10 +543,31 @@ def _exec_raise_leverage_retry(client: Any, params: dict[str, Any]) -> dict[str,
 
 def _exec_retry_tpsl(client: Any, params: dict[str, Any], account: dict[str, Any] | None = None) -> dict[str, Any] | None:
     inst = str(params.get("instId") or "")
-    side = str(params.get("side") or "")
-    contracts = str(params.get("contracts") or "")
-    if not inst or side not in ("buy", "sell") or not contracts:
+    side_raw = str(params.get("side") or "").strip().lower()
+    # Normalize common position-side vocab to what TP/SL expects.
+    # - dashboard/account caches often use "long"/"short"
+    # - trader order logic uses "buy"/"sell"
+    side = (
+        "buy"
+        if side_raw in ("buy", "long")
+        else "sell"
+        if side_raw in ("sell", "short")
+        else side_raw
+    )
+
+    contracts_raw = str(params.get("contracts") or "").strip()
+    if not inst or not side or side not in ("buy", "sell") or not contracts_raw:
         return None
+
+    # Normalize contracts: exchange expects a positive order size.
+    try:
+        size = abs(float(contracts_raw))
+        if hasattr(client, "_format_order_size"):
+            contracts = client._format_order_size(inst, size)
+        else:
+            contracts = str(size)
+    except (ValueError, TypeError):
+        contracts = contracts_raw.lstrip("+-")
 
     mark = resolve_mark_price(
         client,
@@ -568,7 +589,10 @@ def _exec_retry_tpsl(client: Any, params: dict[str, Any], account: dict[str, Any
         leverage=int(params.get("leverage") or 3),
         account=account,
     )
-    return resp if str(resp.get("code")) in ("0", "0.0") else None
+    # Always return the exchange response so callers can:
+    # - compute ok by code
+    # - record a learning lesson with the rejection message
+    return resp if isinstance(resp, dict) else None
 
 
 def execute_repair_action(
@@ -664,7 +688,8 @@ def execute_repair_action(
 
     if atype == "retry_tpsl":
         resp = _exec_retry_tpsl(client, params, account=account)
-        return "retry_tpsl", resp is not None, resp
+        ok = bool(resp) and str(resp.get("code")) in ("0", "0.0")
+        return "retry_tpsl", ok, resp
 
     if atype == "use_cached_scan":
         cached = _load_cached_scan()
@@ -711,6 +736,26 @@ def execute_repair_plan(
         label, ok, payload = execute_repair_action(state, client, llm, account, scan, action)
         result.actions_taken.append(f"{label}:{'ok' if ok else 'fail'}")
         record_repair(state, label, result.diagnosis[:100])
+        if str(action.get("type") or "").strip() == "retry_tpsl" and not ok:
+            try:
+                inst = str((action.get("params") or {}).get("instId") or "")
+                err = ""
+                if isinstance(payload, dict):
+                    err = str(payload.get("msg") or payload.get("error") or payload.get("title") or "")[:160]
+                # Teach the system to normalize side + ensure positive contracts next time.
+                append_lesson_once_per_interval(
+                    state,
+                    category="tpsl",
+                    lesson=(
+                        f"TP/SL attach failed for {inst or 'inst'}; ensure side is buy/sell and contracts are positive. "
+                        f"Exchange msg: {err}"
+                    )[:220],
+                    interval_key=f"tpsl_fail:{inst or 'any'}",
+                    source="repair_llm",
+                    interval_sec=1800,
+                )
+            except Exception:
+                pass
         if ok and payload and label in (
             "retry_close",
             "retry_open",
