@@ -362,8 +362,42 @@ def triage_with_repair_engine(
         result = llm_triage_and_repair(state, client, llm, account, None, incident=incident)
         save_state(state)
         log(label, "Repair engine result", f"recovered={result.recovered} | {result.diagnosis[:180]}")
+        recovered = bool(getattr(result, "recovered", False))
+        actions_taken = getattr(result, "actions_taken", None) or []
+        recovered_or_actions = recovered or bool(actions_taken)
+
+        if not recovered_or_actions:
+            # Cross-agent escalation signal:
+            # If one repair tech can't recover, we emit an activity-log error
+            # so the other two techs (via novel incident scanners / global
+            # autorepair) can immediately "join the action".
+            try:
+                incident_blob = json.dumps(incident, default=str, sort_keys=True)[:2000]
+                esc_fp = hashlib.sha1(incident_blob.encode("utf-8", "ignore")).hexdigest()[:16]
+                detail = f"failed_to_recover; error={esc_fp}; {incident_blob[:500]}"
+                log_event(
+                    "error",
+                    "Incident unresolved",
+                    detail,
+                    {"incident_fingerprint": esc_fp, "phase": incident.get("phase") or ""},
+                )
+            except Exception:
+                pass
+
         return result
     except Exception as exc:
+        # Cross-agent escalation signal for hard failures too.
+        try:
+            esc_fp = hashlib.sha1(str(exc).encode("utf-8", "ignore")).hexdigest()[:16]
+            detail = f"failed_with_exception; error={esc_fp}; {str(exc)[:500]}"
+            log_event(
+                "error",
+                "Incident unresolved",
+                detail,
+                {"incident_fingerprint": esc_fp, "phase": incident.get("phase") or ""},
+            )
+        except Exception:
+            pass
         log_err(label, "Repair engine failed", str(exc)[:300])
         return None
 
