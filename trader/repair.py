@@ -132,6 +132,46 @@ REPAIR_ACTION_CATALOG = [
     },
 ]
 
+_REPAIR_ACTION_TYPES = {str(a.get("type") or "") for a in REPAIR_ACTION_CATALOG}
+
+
+def _normalize_repair_actions(actions: list[Any]) -> list[dict[str, Any]]:
+    """Keep only catalog-valid action types; convert anything else to hold."""
+    normalized: list[dict[str, Any]] = []
+    for act in actions[:5]:
+        if not isinstance(act, dict):
+            continue
+        atype = str(act.get("type") or "").strip()
+        if atype in _REPAIR_ACTION_TYPES:
+            # Ensure params is always a dict
+            if not isinstance(act.get("params"), dict):
+                act["params"] = {}
+            normalized.append(act)
+        else:
+            # Unknown action type => safe hold.
+            normalized.append({"type": "hold", "params": {"reason": f"unknown_action:{atype}"}})
+    return normalized
+
+
+def _verify_tpsl_attached(client: Any, inst_id: str) -> bool:
+    """Verify TP and SL triggers exist after retry_tpsl."""
+    if not inst_id:
+        return False
+    try:
+        from blofin.account_cache import get_account_snapshot
+
+        snap = get_account_snapshot(force=True)
+        positions = snap.get("positions") or []
+        for p in positions:
+            if str(p.get("instId") or "") != inst_id:
+                continue
+            has_tp = bool(p.get("tp") or p.get("tpTriggerPx"))
+            has_sl = bool(p.get("sl") or p.get("slTriggerPx"))
+            return has_tp and has_sl
+    except Exception:
+        return False
+    return False
+
 REPAIR_SYSTEM = """You are the LLM KnightTrader **operations engineer**. You see the ENTIRE live operation:
 recent activity log, account, positions, scan, lessons, stack health, and the incident that triggered you.
 
@@ -745,10 +785,30 @@ def execute_repair_plan(
             source="repair_llm",
         )
 
-    for action in (plan.get("actions") or [])[:5]:
+    normalized_actions = _normalize_repair_actions(list(plan.get("actions") or []))
+    for action in normalized_actions[:5]:
         if not isinstance(action, dict):
             continue
         label, ok, payload = execute_repair_action(state, client, llm, account, scan, action)
+
+        # Post-action verification: "ok" from exchange should mean triggers exist.
+        if label == "retry_tpsl" and ok:
+            inst_id = str((action.get("params") or {}).get("instId") or "")
+            verified = _verify_tpsl_attached(client, inst_id)
+            if not verified:
+                ok = False
+                try:
+                    append_lesson_once_per_interval(
+                        state,
+                        category="tpsl_verify",
+                        lesson=f"Exchange returned code=0 but TP/SL triggers missing for {inst_id}; verify side/contracts normalization and retry again.",
+                        interval_key=f"tpsl_verify_fail:{inst_id}",
+                        source="repair_llm",
+                        interval_sec=1800,
+                    )
+                except Exception:
+                    pass
+
         result.actions_taken.append(f"{label}:{'ok' if ok else 'fail'}")
         record_repair(state, label, result.diagnosis[:100])
         if str(action.get("type") or "").strip() == "retry_tpsl" and not ok:
