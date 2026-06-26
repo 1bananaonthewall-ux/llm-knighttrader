@@ -68,6 +68,16 @@ You MUST NOT assume credentials exist. Before install/start, ask the human:
      - .env with OPENROUTER_API_KEY (or fallback LLM key)
      - VPN connected to allowed exit (if needed)
 
+  E) AGENT FINISH PROTOCOL (after install)
+     1. Start stack once (launcher or stack_launcher.py start)
+     2. Verify end-to-end: /api/health, /api/stack/status (trader online),
+        /api/status (equity), dashboard UI, desktop shortcuts exist
+     3. STOP stack: launcher\Stop LLM KnightTrader.bat or
+        python scripts\stack_launcher.py stop
+     4. Confirm is_entire_stack_stopped() is True
+     5. Tell user: setup done — use desktop Start/Stop only from now on
+     Do NOT leave dashboard or trader running when you finish.
+
 ================================================================================
 0. QUICK START (WINDOWS — MATCHES OPERATOR'S SETUP)
 ================================================================================
@@ -173,8 +183,11 @@ KNIGHTTRADER_MAX_LEVERAGE    Default 50
 4. RUNNING THE STACK (DESKTOP SHORTCUTS = SOURCE OF TRUTH)
 ================================================================================
 
-AFTER INSTALL (one-time): agent may start once to verify, then run STOP.
-DAILY USE: only double-click desktop shortcuts — do not auto-start on login.
+AFTER INSTALL — AI AGENT MUST:
+  1. Start once and verify end-to-end (health, stack status, equity, dashboard UI)
+  2. Run STOP (desktop Stop shortcut or python scripts\stack_launcher.py stop)
+  3. Confirm entire stack stopped — hand off to user
+  User daily use: only double-click desktop Start / Stop. Nothing auto-runs on login.
 
 START — desktop icon "Start LLM KnightTrader"
   launcher\Start LLM KnightTrader.bat
@@ -313,9 +326,9 @@ Share prompt for new users/agents: SHARE_PROMPT.txt (copy-paste to any AI)
 [ ] ASK USER: home country + ProtonVPN exit country (if VPN needed)
 [ ] Confirm VPN exit is NOT a BloFin-restricted country (see section above)
 [ ] Python 3.12+ and pip install -r requirements.txt
-[ ] start_core.ps1 or Start LLM KnightTrader.bat
-[ ] GET /api/health and /api/stack/status OK
-[ ] Trader online, dashboard shows equity
+[ ] Start once → verify E2E (health, stack/status, equity, dashboard, shortcuts)
+[ ] STOP stack (Stop shortcut or stack_launcher.py stop) — confirm fully stopped
+[ ] Tell user: daily control is desktop Start LLM KnightTrader / Stop only
 [ ] After code changes: commit + push (or rely on auto_sync hook)
 
 Mission: grow BloFin futures account toward KNIGHTTRADER_TARGET_EQUITY using

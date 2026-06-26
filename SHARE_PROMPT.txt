@@ -7,7 +7,9 @@ CANONICAL INSTRUCTIONS — read these files in the repo before doing anything:
 1. ReadMe.tx   (full runbook — read entire file)
 2. AGENTS.md   (short agent checklist)
 
-Your job: get LLM KnightTrader running on my machine exactly as documented, with live trading enabled.
+Your job: install LLM KnightTrader, prove it runs end-to-end once, then STOP it and
+hand off daily control to the user's desktop shortcuts. Do NOT leave the stack
+running when you finish.
 
 ---
 

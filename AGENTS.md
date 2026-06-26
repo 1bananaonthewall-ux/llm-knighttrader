@@ -13,6 +13,18 @@ Do **not** use **US, Canada, Singapore, or Mexico** as VPN exit for BloFin.
 
 First successful start creates desktop shortcuts: **Start LLM KnightTrader** and **Stop LLM KnightTrader**.
 
-**Daily operation:** user double-clicks **Start** (cold restart: stop all → dashboard + trader) or **Stop** (kill entire stack). After setup verify, run Stop — do not leave stack running in background.
+## Agent finish protocol (mandatory)
 
-Share prompt for others: **SHARE_PROMPT.txt** in repo root.
+1. **Start** stack once (`launcher\Start LLM KnightTrader.bat` or `python scripts\stack_launcher.py start`)
+2. **Verify end-to-end:**
+   - `GET /api/health` → ok
+   - `GET /api/stack/status` → trader `online`, count 1
+   - `GET /api/status` → equity/available sane
+   - Dashboard loads; desktop shortcuts exist
+3. **Stop** stack: `launcher\Stop LLM KnightTrader.bat` or `python scripts\stack_launcher.py stop`
+4. Confirm: `python -c "from trader.stack_control import is_entire_stack_stopped; print(is_entire_stack_stopped())"` → `True`
+5. Tell user setup is complete — **they** start daily via desktop **Start LLM KnightTrader** only
+
+**Do not** leave trader/dashboard running. **Do not** add startup tasks or background monitors.
+
+Share prompt: **[SHARE_PROMPT.txt](SHARE_PROMPT.txt)**
