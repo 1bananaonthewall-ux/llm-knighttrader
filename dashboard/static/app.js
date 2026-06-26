@@ -11,6 +11,49 @@ const metricTargets = { equity: 0, available: 0, uplTotal: 0 };
 const metricDisplay = { equity: 0, available: 0, uplTotal: 0 };
 let metricsAnimFrame = null;
 
+let lastStream = {
+  equity: null,
+  available: null,
+  uplTotal: null,
+  positionsSig: null,
+  tradesSig: null,
+  researchSig: null,
+  lastDecisionSig: null,
+  baselineSig: null,
+};
+
+function fmtTsMs(ts) {
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  const ms = String(d.getMilliseconds()).padStart(3, "0");
+  return `${hh}:${mm}:${ss}.${ms}`;
+}
+
+function streamNumbers(kind, data) {
+  const el = $("numbers-stream");
+  if (!el) return;
+  const line = document.createElement("div");
+  line.className = "stream-line";
+  line.textContent = `${fmtTsMs(Date.now())} ${kind} ${JSON.stringify(data)}`;
+  el.appendChild(line);
+  while (el.children.length > 300) el.removeChild(el.firstElementChild);
+}
+
+function positionsSignature(positions) {
+  const rows = (positions || []).slice(0, 12).map((p) => ({
+    instId: p.instId,
+    side: p.side,
+    size: p.size,
+    mark: p.mark,
+    upl: p.upl,
+    leverage: p.leverage,
+  }));
+  rows.sort((a, b) => String(a.instId || "").localeCompare(String(b.instId || "")));
+  return JSON.stringify(rows);
+}
+
 function chatLogEl() {
   return $("chat-log");
 }
@@ -197,6 +240,32 @@ function applyAccount(acct) {
   } else {
     metricTargets.uplTotal = (acct.positions || []).reduce((s, p) => s + (Number(p.upl) || 0), 0);
   }
+
+  // Millisecond stream of BloFin-linked figures: emit only when values change.
+  try {
+    const uplTotalNow = metricTargets.uplTotal;
+    const posSig = positionsSignature(acct.positions);
+    const diff = {};
+    if (lastStream.equity !== equity) diff.equity = equity;
+    if (lastStream.available !== available) diff.available = available;
+    if (lastStream.uplTotal !== uplTotalNow) diff.uplTotal = uplTotalNow;
+    if (lastStream.positionsSig !== posSig) {
+      const rows = (acct.positions || []).slice(0, 6).map((p) => p.instId);
+      diff.positionsChanged = true;
+      diff.positions_sample = rows;
+      diff.positions_count = (acct.positions || []).length;
+    }
+    if (Object.keys(diff).length) {
+      lastStream.equity = equity;
+      lastStream.available = available;
+      lastStream.uplTotal = uplTotalNow;
+      lastStream.positionsSig = posSig;
+      streamNumbers("account", diff);
+    }
+  } catch (_) {
+    // ignore stream failures
+  }
+
   renderPositions(acct.positions);
   const status = $("conn-status");
   const mtm = acct.mtm ? "Live" : "Cached";
@@ -466,6 +535,48 @@ async function refreshStatus() {
   }
   if (data.state?.last_decision) {
     $("decision").textContent = JSON.stringify(data.state.last_decision, null, 2);
+    try {
+      const ld = data.state.last_decision || {};
+      const reasoning = String(ld.reasoning || "");
+      const tsInt = Math.floor(Number(ld.ts || 0));
+      const sig = `${ld.action || ""}:${ld.confidence ?? ""}:${tsInt}:${reasoning.slice(0, 60)}`;
+      if (lastStream.lastDecisionSig !== sig) {
+        lastStream.lastDecisionSig = sig;
+        streamNumbers("last_llm_decision", {
+          action: ld.action || null,
+          confidence: ld.confidence ?? null,
+          ts: tsInt,
+        });
+      }
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  try {
+    const pb = data.performance_baseline || null;
+    if (pb) {
+      const sig = JSON.stringify({
+        active: pb.active,
+        armed: pb.armed,
+        baseline_equity: pb.baseline_equity,
+        equity_change_usd: pb.equity_change_usd,
+        equity_change_pct: pb.equity_change_pct,
+        expected_injection_usd: pb.expected_injection_usd,
+      });
+      if (lastStream.baselineSig !== sig) {
+        lastStream.baselineSig = sig;
+        streamNumbers("baseline", {
+          active: pb.active,
+          armed: pb.armed,
+          baseline_equity: pb.baseline_equity ?? null,
+          equity_change_usd: pb.equity_change_usd ?? null,
+          equity_change_pct: pb.equity_change_pct ?? null,
+        });
+      }
+    }
+  } catch (_) {
+    // ignore
   }
 }
 
@@ -476,6 +587,38 @@ async function refreshTradesResearch() {
   ]);
   renderTrades(t.trades);
   renderResearch(r.notes);
+
+  try {
+    const trades = t.trades || [];
+    const last = trades[trades.length - 1] || {};
+    const failedCount = trades.filter((x) => x?.ok === false || x?.action === "close_failed").length;
+    const tsInt = Math.floor(Number(last.ts || 0));
+    const sig = `${trades.length}:${failedCount}:${last.action || ""}:${last.instId || ""}:${tsInt}`;
+    if (lastStream.tradesSig !== sig) {
+      lastStream.tradesSig = sig;
+      streamNumbers("trades", {
+        total: trades.length,
+        failedCount,
+        last_action: last.action || null,
+        last_instId: last.instId || null,
+        last_ok: last.ok,
+        ts: tsInt,
+      });
+    }
+
+    const notes = r.notes || [];
+    const lastN = notes[notes.length - 1] || {};
+    const lastNoteSig = `${notes.length}:${Math.floor(Number(lastN.ts || 0))}:${String(lastN.note || "").slice(0, 40)}`;
+    if (lastStream.researchSig !== lastNoteSig) {
+      lastStream.researchSig = lastNoteSig;
+      streamNumbers("research", {
+        total: notes.length,
+        last_note_snip: String(lastN.note || "").slice(0, 80),
+      });
+    }
+  } catch (_) {
+    // ignore stream
+  }
 }
 
 function addChat(role, text, extraClass = "", options = {}) {
@@ -573,6 +716,18 @@ function connectWs() {
       log.innerHTML = "";
       seenActivityTs.clear();
       [...msg.events].reverse().forEach((ev) => trackActivityEvent(ev, false));
+      const ns = $("numbers-stream");
+      if (ns) ns.innerHTML = "";
+      lastStream = {
+        equity: null,
+        available: null,
+        uplTotal: null,
+        positionsSig: null,
+        tradesSig: null,
+        researchSig: null,
+        lastDecisionSig: null,
+        baselineSig: null,
+      };
       if (msg.account) applyAccount(msg.account);
     }
     if (msg.type === "account_update") {

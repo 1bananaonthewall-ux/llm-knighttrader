@@ -289,6 +289,20 @@ h2 { margin: 0 0 0.75rem; font-size: 0.95rem; color: var(--muted); text-transfor
   font-size: 0.8rem;
 }
 
+.stream-log {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-x: hidden;
+  max-height: 260px;
+}
+
+.stream-line {
+  padding: 0.22rem 0.35rem;
+  border-bottom: 1px solid rgba(31, 54, 75, 0.55);
+}
+
 footer {
   display: flex;
   justify-content: space-between;
