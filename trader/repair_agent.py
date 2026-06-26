@@ -131,14 +131,22 @@ def agent_main(
     log(name, "Agent started", f"interval={interval_sec}s")
 
     llm = LLMWrapper()
-    state: dict[str, Any] = {
-        "last_action_ts": 0.0,
-        "consecutive_errors": 0,
-        "repairs_attempted": 0,
-        "repairs_succeeded": 0,
-        "startup_ts": time.time(),
-        "seen_fingerprints": [],
-    }
+    # IMPORTANT: repair LLM expects the same state schema as the main trader.
+    # Use trader.state.load_state() so keys like `research_notes` always exist
+    # (prevents KeyError crash loops during llm_triage_and_repair).
+    from trader.state import load_state as load_trader_state
+
+    state = load_trader_state()
+    state.update(
+        {
+            "last_action_ts": 0.0,
+            "consecutive_errors": 0,
+            "repairs_attempted": 0,
+            "repairs_succeeded": 0,
+            "startup_ts": time.time(),
+            "seen_fingerprints": state.get("seen_fingerprints") or [],
+        }
+    )
 
     try:
         while True:

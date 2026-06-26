@@ -9,3 +9,4 @@ credentials/*.local.*
 *.pid
 .DS_Store
 Thumbs.db
+tweet.html
