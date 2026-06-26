@@ -4,6 +4,44 @@ LLM KNIGHTTRADER — AGENT SETUP BIBLE
 If you are an AI agent: read this entire file first, then execute the steps in
 order. This is the canonical runbook to reproduce the operator's live stack.
 
+*** If you were given an older emailed setup prompt that only says "get it
+running" — read the CORRECTION section next. It overrides "leave it running". ***
+
+================================================================================
+*** CORRECTION (applies to original / emailed share prompt) ***
+================================================================================
+Many users received a short prompt that says: clone repo, read ReadMe.tx, get
+LLM KnightTrader running. That prompt is still valid — but you MUST add this at
+the end of setup:
+
+  DO NOT leave the stack running when you finish.
+
+  After install, you must:
+    1. START once (launcher\Start LLM KnightTrader.bat or stack_launcher.py start)
+    2. VERIFY end-to-end (all must pass):
+         GET /api/health
+         GET /api/stack/status  → trader "online", count 1
+         GET /api/status        → equity and available look sane
+         Dashboard loads; trader dot green
+         Desktop shortcuts exist: "Start LLM KnightTrader", "Stop LLM KnightTrader"
+    3. STOP the entire stack (mandatory):
+         launcher\Stop LLM KnightTrader.bat
+         OR: python scripts\stack_launcher.py stop
+    4. CONFIRM stopped:
+         python -c "from trader.stack_control import is_entire_stack_stopped; print(is_entire_stack_stopped())"
+         → must print True
+    5. TELL THE USER (exact intent):
+         "Setup is complete. I verified LLM KnightTrader end-to-end and stopped it.
+          From now on, double-click Start LLM KnightTrader on your desktop to run.
+          Double-click Stop LLM KnightTrader to shut everything down."
+
+  Daily operation is ONLY via those desktop shortcuts — not background services,
+  not python -m trader.agent, not scheduled tasks, not monitor agents.
+
+  Ask user where credentials live on disk (full path) before setup — see below.
+
+================================================================================
+
 Project: autonomous BloFin USDT-margined perpetual futures bot + live dashboard.
 Stack: Python 3.12+, FastAPI dashboard, multi-provider LLM (OpenRouter/Groq/Gemini),
        account cache guardian, auto-harvest, LLM repair triage, stack watchdog.
@@ -17,6 +55,8 @@ Default target equity: $1,000,000 (game mode, micro account friendly)
 You MUST NOT assume credentials exist. Before install/start, ask the human:
 
   A) BLOFIN API CREDENTIALS (required for live trading)
+     Ask first: "Where are your API credentials on this computer? (full path)"
+     Then read that file or copy into credentials/blofin.txt locally.
      - API Key
      - Secret Key
      - Passphrase

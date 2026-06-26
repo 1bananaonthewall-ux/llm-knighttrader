@@ -2,8 +2,7 @@
 
 Autonomous **BloFin USDT perpetual futures** bot with a live dashboard, multi-provider LLM decisions, auto-harvest, and self-repair.
 
-**AI agents:** read **[ReadMe.tx](ReadMe.tx)** first — full setup, architecture, API, and troubleshooting.  
-Also see **[AGENTS.md](AGENTS.md)** for required user questions (BloFin creds, LLM keys, ProtonVPN/geo).
+**AI agents:** read **[ReadMe.tx](ReadMe.tx)** first — includes a **CORRECTION** section at the top if you received an older emailed setup prompt (verify E2E, then stop; user starts via desktop).
 
 ## Quick start (Windows)
 
