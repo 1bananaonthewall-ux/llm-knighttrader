@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from config import DEFAULT_CREDENTIALS_PATH, PROJECT_ROOT
+from config import PROJECT_ROOT
 
 
 @dataclass(frozen=True)
@@ -28,10 +28,45 @@ def _parse_key_value_file(text: str) -> dict[str, str]:
     return fields
 
 
+def resolve_blofin_credentials_path() -> Path | None:
+    """Find BloFin credential file — env, repo default, then known operator paths."""
+    candidates: list[Path] = []
+    env_path = os.environ.get("BLOFIN_CREDENTIALS_PATH", "").strip()
+    if env_path:
+        candidates.append(Path(env_path))
+    candidates.extend(
+        [
+            PROJECT_ROOT / "credentials" / "blofin.txt",
+            Path.home() / "Downloads" / "MK Blo Hermes API compendium.txt",
+        ]
+    )
+    downloads = Path.home() / "Downloads"
+    if downloads.is_dir():
+        for path in sorted(
+            downloads.glob("*compendium*.txt"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        ):
+            candidates.append(path)
+
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path.resolve())
+        if key in seen:
+            continue
+        seen.add(key)
+        if path.is_file():
+            return path
+    return None
+
+
 def load_blofin_credentials(path: Path | None = None) -> BlofinCredentials:
-    cred_path = Path(path) if path else DEFAULT_CREDENTIALS_PATH
-    if not cred_path.is_file():
-        raise FileNotFoundError(f"Blofin credentials not found: {cred_path}")
+    cred_path = Path(path) if path else resolve_blofin_credentials_path()
+    if cred_path is None or not cred_path.is_file():
+        raise FileNotFoundError(
+            "Blofin credentials not found. Set BLOFIN_CREDENTIALS_PATH, create "
+            "credentials/blofin.txt, or place keys in Downloads compendium file."
+        )
     fields = _parse_key_value_file(cred_path.read_text(encoding="utf-8"))
     api_key = fields.get("api_key") or fields.get("apikey")
     secret_key = fields.get("secret_key") or fields.get("secretkey")

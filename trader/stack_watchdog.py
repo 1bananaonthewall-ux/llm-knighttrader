@@ -9,10 +9,17 @@ from typing import Any
 from activity_log import log_event
 from config import ACCOUNT_REFRESH_SEC
 
+_DASHBOARD_BOOT_TS = 0.0
+_BOOT_GRACE_SEC = 45.0
 _LAST_RUN_TS = 0.0
 _MIN_INTERVAL_SEC = 12.0
 _LAST_REPAIR_TS = 0.0
 _REPAIR_COOLDOWN_SEC = 20.0
+
+
+def mark_dashboard_boot() -> None:
+    global _DASHBOARD_BOOT_TS
+    _DASHBOARD_BOOT_TS = time.time()
 
 
 def _issue(
@@ -130,15 +137,17 @@ def _repair_known_issue(issue: dict[str, Any]) -> tuple[bool, str]:
     code = str(issue.get("code") or "")
 
     if code == "trader_offline":
+        if _DASHBOARD_BOOT_TS and time.time() - _DASHBOARD_BOOT_TS < _BOOT_GRACE_SEC:
+            return False, "startup grace — launcher owns trader start"
         from trader.stack_control import start_single_trader
 
         result = start_single_trader()
         return bool(result.get("ok")), str(result.get("error") or f"pid {result.get('pid')}")
 
     if code in ("trader_duplicate", "extra_bots_running"):
-        from trader.stack_control import kill_all_bots, stack_status
+        from trader.stack_control import dedupe_preferred_trader, stack_status
 
-        killed = kill_all_bots()
+        keep = dedupe_preferred_trader()
         stack = stack_status()
         trader = stack.get("trader") or {}
         if trader.get("status") == "offline":
@@ -147,7 +156,7 @@ def _repair_known_issue(issue: dict[str, Any]) -> tuple[bool, str]:
             started = start_single_trader()
             if not started.get("ok"):
                 return False, str(started.get("error") or "failed to restart trader")
-        return bool(killed), f"killed {len(killed)} processes"
+        return bool(keep), f"kept trader pid {keep}"
 
     if code in (
         "account_display_corrupt",

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from config import DATA_DIR, PID_DIR, PROJECT_ROOT
-from trader.health import TRADER_PID_FILE, _pid_alive, _trader_pids
+from trader.health import TRADER_PID_FILE, _is_trader_process_cmd, _pid_alive, _trader_pids
 
 TRADER_ERR_LOG = DATA_DIR / "logs" / "trader.err"
 
@@ -26,12 +26,20 @@ BOT_MODULES = (
 
 MONITOR_PID_FILE = PID_DIR / "monitor.pid"
 DASHBOARD_PID_FILE = PID_DIR / "dashboard.pid"
-DEFAULT_TRADER_PYTHON = Path(
-    os.environ.get(
-        "KNIGHTTRADER_PYTHON",
-        sys.executable,
-    )
-)
+def _discover_python() -> Path:
+    env_py = os.environ.get("KNIGHTTRADER_PYTHON", "").strip()
+    if env_py and Path(env_py).is_file():
+        return Path(env_py)
+    if sys.platform == "win32":
+        local = Path(os.environ.get("LOCALAPPDATA", ""))
+        for ver in ("Python312", "Python313", "Python311"):
+            candidate = local / "Programs" / ver / "python.exe"
+            if candidate.is_file():
+                return candidate
+    return Path(sys.executable)
+
+
+DEFAULT_TRADER_PYTHON = _discover_python()
 
 
 def _trader_python() -> str:
@@ -43,41 +51,30 @@ def _trader_python() -> str:
     return sys.executable
 
 
+def _trader_launch_cmd() -> list[str]:
+    """Launch trader as one process (Windows `-m` can double-spawn)."""
+    python_bin = _trader_python()
+    return [python_bin, "-c", "from trader.agent import main; main()"]
+
+
+def _cmdline_has_module(cmd: str, module: str) -> bool:
+    if f"-m {module}" in cmd:
+        return True
+    if module == "trader.agent":
+        return _is_trader_process_cmd(cmd)
+    return False
+
+
 def _module_pids(module: str, exclude: int | None = None) -> list[int]:
     """Find running module PIDs via command-line match."""
     mine = exclude or os.getpid()
-    pattern = module.replace(".", r"\.")
     found: list[int] = []
-    try:
-        if sys.platform == "win32":
-            out = subprocess.check_output(
-                [
-                    "powershell",
-                    "-NoProfile",
-                    "-Command",
-                    "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
-                    f"Where-Object {{ $_.CommandLine -match '-m {pattern}' }} | "
-                    "Select-Object -ExpandProperty ProcessId",
-                ],
-                stderr=subprocess.DEVNULL,
-                text=True,
-                timeout=15,
-            )
-            for line in out.splitlines():
-                line = line.strip()
-                if line.isdigit():
-                    pid = int(line)
-                    if pid != mine:
-                        found.append(pid)
-        else:
-            out = subprocess.check_output(["pgrep", "-f", f"-m {module}"], text=True, timeout=10)
-            for line in out.splitlines():
-                if line.strip().isdigit():
-                    pid = int(line.strip())
-                    if pid != mine:
-                        found.append(pid)
-    except (subprocess.SubprocessError, FileNotFoundError, ValueError):
-        pass
+    for row in _enumerate_python_processes():
+        pid = row["pid"]
+        if pid == mine:
+            continue
+        if _cmdline_has_module(row["cmd"], module):
+            found.append(pid)
     return found
 
 
@@ -104,7 +101,7 @@ def _enumerate_python_processes() -> list[dict[str, Any]]:
     if sys.platform == "win32":
         script = (
             "Get-CimInstance Win32_Process | "
-            "Where-Object { $_.Name -eq 'python.exe' } | "
+            "Where-Object { $_.Name -match 'python' } | "
             "Select-Object ProcessId, CommandLine | ConvertTo-Json -Compress"
         )
         try:
@@ -169,7 +166,7 @@ def _kill_pid(pid: int) -> bool:
 
 def _clear_bot_pid_files() -> None:
     PID_DIR.mkdir(parents=True, exist_ok=True)
-    for path in (TRADER_PID_FILE, MONITOR_PID_FILE, DASHBOARD_PID_FILE):
+    for path in (TRADER_PID_FILE, MONITOR_PID_FILE, DASHBOARD_PID_FILE, PID_DIR / "trader.lock"):
         try:
             path.unlink(missing_ok=True)
         except OSError:
@@ -188,7 +185,7 @@ def running_process_counts() -> dict[str, int]:
         watchers += len(_pids_for_module(module))
     return {
         "dashboard": len(_module_pids("dashboard.server")),
-        "trader": len(_trader_pids()),
+        "trader": len(_module_pids("trader.agent")),
         "monitor": len(_pids_for_module("monitor.agent")),
         "watchers": watchers,
     }
@@ -322,6 +319,26 @@ def kill_all_bots(exclude_pids: set[int] | None = None) -> list[int]:
     return killed
 
 
+def dedupe_preferred_trader() -> int | None:
+    """Kill duplicate trader processes; keep KNIGHTTRADER_PYTHON instance."""
+    preferred = str(Path(_trader_python()).resolve()).lower()
+    pids = sorted(set(_trader_pids()))
+    if not pids:
+        return None
+    keep = pids[-1]
+    for row in _enumerate_python_processes():
+        pid = row["pid"]
+        if pid not in pids:
+            continue
+        if preferred in (row.get("cmd") or "").lower():
+            keep = pid
+            break
+    for pid in pids:
+        if pid != keep:
+            _kill_pid(pid)
+    return keep
+
+
 def start_single_trader() -> dict[str, Any]:
     """Start exactly one trader.agent process."""
     for pid in _trader_pids():
@@ -346,25 +363,34 @@ def start_single_trader() -> dict[str, Any]:
     err_log.write(f"\n--- trader start {time.strftime('%Y-%m-%d %H:%M:%S')} pid-pending ---\n")
     err_log.flush()
     kwargs["stderr"] = err_log
-    proc = subprocess.Popen([python_bin, "-m", "trader.agent"], **kwargs)
+    proc = subprocess.Popen(_trader_launch_cmd(), **kwargs)
     PID_DIR.mkdir(parents=True, exist_ok=True)
     TRADER_PID_FILE.write_text(str(proc.pid), encoding="utf-8")
 
-    time.sleep(2.0)
-    alive_pids = _trader_pids()
-    if proc.poll() is not None and not alive_pids:
-        try:
-            TRADER_PID_FILE.unlink(missing_ok=True)
-        except OSError:
-            pass
-        return {"ok": False, "error": f"trader exited immediately (code {proc.returncode})"}
+    deadline = time.time() + 15.0
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            try:
+                TRADER_PID_FILE.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return {"ok": False, "error": f"trader exited immediately (code {proc.returncode})"}
+        alive = sorted(set(_trader_pids()))
+        if alive:
+            pid = proc.pid if proc.pid in alive else alive[-1]
+            TRADER_PID_FILE.write_text(str(pid), encoding="utf-8")
+            return {"ok": True, "pid": pid, "python": python_bin}
+        time.sleep(0.5)
 
-    pid = alive_pids[0] if len(alive_pids) == 1 else proc.pid
-    if len(alive_pids) > 1:
-        return {"ok": False, "error": "multiple traders started", "pids": alive_pids}
+    if proc.poll() is None:
+        TRADER_PID_FILE.write_text(str(proc.pid), encoding="utf-8")
+        return {"ok": True, "pid": proc.pid, "python": python_bin}
 
-    TRADER_PID_FILE.write_text(str(pid), encoding="utf-8")
-    return {"ok": True, "pid": pid, "python": python_bin}
+    try:
+        TRADER_PID_FILE.unlink(missing_ok=True)
+    except OSError:
+        pass
+    return {"ok": False, "error": f"trader exited (code {proc.returncode})"}
 
 
 def restart_bots() -> dict[str, Any]:

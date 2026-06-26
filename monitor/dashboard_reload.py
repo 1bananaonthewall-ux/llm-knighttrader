@@ -15,12 +15,22 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from config import DASHBOARD_HOST, DASHBOARD_PORT, PID_DIR
+from config import DASHBOARD_HOST, DASHBOARD_PORT, PID_DIR, PROJECT_ROOT
 
-PYTHON = os.environ.get(
-    "KNIGHTTRADER_PYTHON",
-    r"C:\Users\mknig\AppData\Local\Programs\Python\Python312\python.exe",
-)
+def _launcher_python() -> str:
+    env_py = os.environ.get("KNIGHTTRADER_PYTHON", "").strip()
+    if env_py and Path(env_py).is_file():
+        return env_py
+    if sys.platform == "win32":
+        local = Path(os.environ.get("LOCALAPPDATA", ""))
+        for ver in ("Python312", "Python313", "Python311"):
+            candidate = local / "Programs" / ver / "python.exe"
+            if candidate.is_file():
+                return str(candidate)
+    return sys.executable
+
+
+PYTHON = _launcher_python()
 RELOAD_COOLDOWN_SEC = float(os.environ.get("KNIGHTTRADER_RELOAD_COOLDOWN", "60"))
 
 

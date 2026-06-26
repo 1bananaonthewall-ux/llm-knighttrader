@@ -30,7 +30,7 @@ from trader.baseline import parse_baseline_command, progress_summary, set_user_b
 from trader.learning import lessons_digest
 from trader.order_guard import execution_context
 from trader.stack_control import restart_bots, stack_status
-from trader.stack_watchdog import diagnose_stack, run_stack_watchdog
+from trader.stack_watchdog import diagnose_stack, mark_dashboard_boot, run_stack_watchdog
 from blofin.account_cache import guard_account_stream
 from trader.state import append_chat, append_user_directive, load_state, reload_chat_fields, save_state
 
@@ -46,7 +46,13 @@ async def _lifespan(app: FastAPI):
     if get_recent(1):
         _last_tail_ts = float(get_recent(1)[-1].get("ts") or 0)
     await asyncio.to_thread(_bootstrap_account_cache)
-    await asyncio.to_thread(refresh_account_if_stale, force=True)
+    try:
+        await asyncio.to_thread(refresh_account_if_stale, force=True)
+    except FileNotFoundError as exc:
+        log_event("error", "BloFin credentials missing — dashboard online, trading blocked", str(exc)[:240])
+    except Exception as exc:
+        log_event("error", "Account cache refresh failed at startup", str(exc)[:240])
+    mark_dashboard_boot()
     tail_task = asyncio.create_task(_tail_activity_loop())
     account_task = asyncio.create_task(_account_stream_loop())
     watchdog_task = asyncio.create_task(_stack_watchdog_loop())

@@ -17,10 +17,15 @@ if str(ROOT) not in sys.path:
 
 from config import DASHBOARD_HOST, DASHBOARD_PORT, PID_DIR
 from trader.stack_control import (
+    _enumerate_python_processes,
+    _kill_pid,
+    _module_pids,
     _trader_python,
     is_entire_stack_stopped,
     kill_entire_stack,
     running_process_counts,
+    stack_status,
+    start_single_trader,
 )
 
 DASHBOARD_URL = f"http://{DASHBOARD_HOST}:{DASHBOARD_PORT}"
@@ -91,6 +96,38 @@ def stop_stack() -> int:
     return 1
 
 
+def _resolve_module_pid(module: str, *, timeout_sec: float = 15.0) -> int | None:
+    """Return a running PID for module once it appears (never kill during wait)."""
+    deadline = time.time() + timeout_sec
+    while time.time() < deadline:
+        pids = sorted(set(_module_pids(module)))
+        if pids:
+            return pids[-1]
+        time.sleep(0.5)
+    return None
+
+
+def _dedupe_module(module: str) -> int | None:
+    """Keep one process for module; prefer KNIGHTTRADER_PYTHON interpreter."""
+    preferred = str(Path(_trader_python()).resolve()).lower()
+    pids = sorted(set(_module_pids(module)))
+    if not pids:
+        return None
+    keep = pids[-1]
+    for row in _enumerate_python_processes():
+        pid = row["pid"]
+        if pid not in pids:
+            continue
+        if preferred in (row.get("cmd") or "").lower():
+            keep = pid
+            break
+    for pid in pids:
+        if pid != keep:
+            _kill_pid(pid)
+    time.sleep(0.5)
+    return keep
+
+
 def start_stack(*, open_browser: bool = False) -> int:
     """Stop everything, then start exactly one dashboard + one trader."""
     code = stop_stack()
@@ -103,30 +140,40 @@ def start_stack(*, open_browser: bool = False) -> int:
     if dash.poll() is not None:
         print(f"ERROR: dashboard.server exited immediately (code {dash.returncode})")
         return 1
-    _write_pid("dashboard", dash.pid)
 
     if not _wait_dashboard_health():
         print("ERROR: dashboard health check failed")
         return 1
 
-    print("Starting trader...")
-    trader = _popen_module("trader.agent")
-    time.sleep(1.5)
-    if trader.poll() is not None:
-        print(f"ERROR: trader.agent exited immediately (code {trader.returncode})")
+    dash_pid = _resolve_module_pid("dashboard.server")
+    if dash_pid is None:
+        print("ERROR: dashboard process not found after start")
         return 1
-    _write_pid("trader", trader.pid)
+    _write_pid("dashboard", dash_pid)
+
+    print("Starting trader...")
+    trader_result = start_single_trader()
+    if not trader_result.get("ok"):
+        print(f"ERROR: trader failed to start — {trader_result.get('error', 'unknown')}")
+        return 1
+    trader_pid = int(trader_result["pid"])
+    _write_pid("trader", trader_pid)
 
     counts = running_process_counts()
-    if counts["dashboard"] != 1 or counts["trader"] != 1:
+    stack = stack_status()
+    if stack.get("trader", {}).get("status") not in ("online", "duplicate"):
         print(
-            f"ERROR: expected 1 dashboard and 1 trader — "
-            f"got dashboard={counts['dashboard']} trader={counts['trader']}"
+            f"ERROR: trader not online — "
+            f"dashboard={counts['dashboard']} trader={counts['trader']} "
+            f"status={stack.get('trader')}"
         )
+        return 1
+    if counts["dashboard"] < 1:
+        print(f"ERROR: dashboard not running (count={counts['dashboard']})")
         return 1
 
     _ensure_desktop_shortcuts()
-    print(f"Dashboard PID {dash.pid} | Trader PID {trader.pid}")
+    print(f"Dashboard PID {dash_pid} | Trader PID {trader_pid}")
     print(f"LLM KnightTrader ready -> {DASHBOARD_URL}")
     print("Daily use: double-click 'Start LLM KnightTrader' on desktop to restart the stack.")
 
