@@ -121,6 +121,39 @@ def diagnose_stack() -> list[dict[str, Any]]:
             )
         )
 
+    from trader.stack_control import desktop_shortcuts_exist
+
+    if not desktop_shortcuts_exist():
+        issues.append(
+            _issue(
+                "desktop_shortcuts_missing",
+                severity="warn",
+                detail="Desktop Start/Stop LLM KnightTrader shortcuts not found",
+            )
+        )
+
+    try:
+        from credentials import resolve_blofin_credentials_path
+
+        if resolve_blofin_credentials_path() is None:
+            issues.append(
+                _issue(
+                    "credentials_missing",
+                    severity="critical",
+                    detail="BloFin credentials file not found — ask user for keys or path",
+                    auto=False,
+                )
+            )
+    except Exception as exc:
+        issues.append(
+            _issue(
+                "credentials_missing",
+                severity="critical",
+                detail=str(exc)[:200],
+                auto=False,
+            )
+        )
+
     return issues
 
 
@@ -157,6 +190,13 @@ def _repair_known_issue(issue: dict[str, Any]) -> tuple[bool, str]:
             if not started.get("ok"):
                 return False, str(started.get("error") or "failed to restart trader")
         return bool(keep), f"kept trader pid {keep}"
+
+    if code == "desktop_shortcuts_missing":
+        from trader.stack_control import ensure_desktop_shortcuts
+
+        result = ensure_desktop_shortcuts()
+        detail = str(result.get("paths") or result.get("error") or result)
+        return bool(result.get("ok")), detail[:300]
 
     if code in (
         "account_display_corrupt",

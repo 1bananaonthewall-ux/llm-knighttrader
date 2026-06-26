@@ -408,3 +408,60 @@ def restart_bots() -> dict[str, Any]:
         "trader": trader,
         "stack": stack_status(),
     }
+
+
+DESKTOP_START_LNK = "Start LLM KnightTrader.lnk"
+DESKTOP_STOP_LNK = "Stop LLM KnightTrader.lnk"
+
+
+def _windows_desktop_dir() -> Path:
+    if sys.platform != "win32":
+        return Path.home() / "Desktop"
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
+        if ctypes.windll.shell32.SHGetFolderPathW(None, 0, None, 0, buf) == 0:
+            return Path(buf.value)
+    except (AttributeError, OSError, ValueError):
+        pass
+    return Path.home() / "Desktop"
+
+
+def desktop_shortcut_paths() -> dict[str, Path]:
+    desktop = _windows_desktop_dir()
+    return {"start": desktop / DESKTOP_START_LNK, "stop": desktop / DESKTOP_STOP_LNK}
+
+
+def desktop_shortcuts_exist() -> bool:
+    paths = desktop_shortcut_paths()
+    return paths["start"].is_file() and paths["stop"].is_file()
+
+
+def ensure_desktop_shortcuts() -> dict[str, Any]:
+    """Create Start + Stop LLM KnightTrader shortcuts on the user Desktop."""
+    script = PROJECT_ROOT / "scripts" / "create_desktop_shortcuts.ps1"
+    if not script.is_file():
+        return {"ok": False, "error": f"missing script: {script}"}
+    try:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
+            cwd=str(PROJECT_ROOT),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or str(exc))[:300]
+        return {"ok": False, "error": detail}
+    except (subprocess.SubprocessError, OSError) as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+    paths = desktop_shortcut_paths()
+    ok = desktop_shortcuts_exist()
+    return {
+        "ok": ok,
+        "paths": {k: str(v) for k, v in paths.items()},
+        "error": None if ok else "shortcuts script ran but .lnk files not found",
+    }

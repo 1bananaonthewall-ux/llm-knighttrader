@@ -60,7 +60,19 @@ _LLM_PRIORITY_PHASES = frozenset(
 REPAIR_ACTION_CATALOG = [
     {
         "type": "start_trader",
-        "description": "Start trader.agent when offline (uses Python 3.12 launcher).",
+        "description": "Start trader.agent when offline (uses KNIGHTTRADER_PYTHON launcher).",
+    },
+    {
+        "type": "create_desktop_shortcuts",
+        "description": "Create Start LLM KnightTrader + Stop LLM KnightTrader on user Desktop (.lnk).",
+    },
+    {
+        "type": "dedupe_traders",
+        "description": "Kill duplicate trader processes; keep KNIGHTTRADER_PYTHON instance.",
+    },
+    {
+        "type": "kill_extra_bots",
+        "description": "Kill monitor, watchers, and extra bots (not dashboard).",
     },
     {
         "type": "refresh_account",
@@ -143,6 +155,10 @@ RULES:
 - For LLM/JSON failures: wait_llm_cooldown, record_lesson, hold — do not force trades.
 - For margin 103003: raise_leverage_retry_open or redirect_open to affordable_setups.
 - For rate limits: wait_seconds (use backoff hint from stack_health) then refresh_account.
+- Trader offline: start_trader. Duplicate traders: dedupe_traders then start_trader if needed.
+- Missing desktop shortcuts: create_desktop_shortcuts (user daily Start/Stop must exist).
+- Never advise python -m trader.agent for daily use — desktop launcher or stack_launcher.py start.
+- See stack_fix.playbook in operational picture for full deterministic repair map.
 - Never invent action types — only use catalog types.
 - Max 5 actions per plan. Prefer hold over reckless retries when confidence < 50.
 - Set retry_original true only when a retry_* action is included and risk is acceptable.
@@ -303,6 +319,8 @@ def stack_health_snapshot(
     account: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     from blofin.account_cache import is_rate_limited, read_account_cached
+    from trader.stack_control import desktop_shortcuts_exist, running_process_counts, stack_status
+    from trader.stack_fix import STACK_FIX_PLAYBOOK
 
     meta = _repair_meta(state)
     llm_status = llm.status() if llm else {}
@@ -320,6 +338,10 @@ def stack_health_snapshot(
         "last_repair_ts": meta.get("last_ts"),
         "recent_repairs": [r.get("action") for r in (meta.get("recent") or [])[-8:]],
         "last_incident": state.get("_last_incident"),
+        "process_counts": running_process_counts(),
+        "stack_status": stack_status(),
+        "desktop_shortcuts_exist": desktop_shortcuts_exist(),
+        "fix_playbook": STACK_FIX_PLAYBOOK,
     }
 
 
@@ -360,6 +382,7 @@ def build_operational_picture(
 ) -> dict[str, Any]:
     """Assemble everything the repair LLM needs to think on its feet."""
     from trader.order_guard import execution_context
+    from trader.stack_fix import stack_fix_context
 
     recent = get_recent(50)
     if not recent and ACTIVITY_LOG.is_file():
@@ -378,6 +401,7 @@ def build_operational_picture(
             "deterministic_playbook": bool(_deterministic_repair_plan(incident)),
         },
         "stack_health": stack_health_snapshot(llm, state, account),
+        "stack_fix": stack_fix_context(),
         "recent_activity": _summarize_activity(recent, 35),
         "account": {
             "equity": account.get("equity"),
@@ -577,6 +601,28 @@ def execute_repair_action(
             log_event("error", "Trader start failed", str(result.get("error") or "trader still offline")[:300])
         return "start_trader", ok, result
 
+    if atype == "create_desktop_shortcuts":
+        from trader.stack_control import ensure_desktop_shortcuts
+
+        result = ensure_desktop_shortcuts()
+        return "create_desktop_shortcuts", bool(result.get("ok")), result
+
+    if atype == "dedupe_traders":
+        from trader.stack_control import dedupe_preferred_trader, stack_status, start_single_trader
+
+        keep = dedupe_preferred_trader()
+        stack = stack_status()
+        if (stack.get("trader") or {}).get("status") == "offline":
+            started = start_single_trader()
+            return "dedupe_traders", bool(started.get("ok")), {"keep": keep, "start": started}
+        return "dedupe_traders", bool(keep), {"keep": keep}
+
+    if atype == "kill_extra_bots":
+        from trader.stack_control import kill_all_bots
+
+        killed = kill_all_bots()
+        return "kill_extra_bots", True, {"killed": killed}
+
     if atype == "bootstrap_account_cache":
         from blofin.account_cache import bootstrap_account_cache, get_account_snapshot
         bootstrap_account_cache()
@@ -693,6 +739,14 @@ def _deterministic_repair_plan(incident: dict[str, Any]) -> dict[str, Any] | Non
 
     if phase == "stack_watchdog":
         actions: list[dict[str, Any]] = []
+        issues = incident.get("issues") or []
+        codes = {str(i.get("code") or "") for i in issues if isinstance(i, dict)}
+        if "desktop_shortcuts_missing" in codes:
+            actions.append({"type": "create_desktop_shortcuts", "params": {}})
+        if "trader_duplicate" in codes:
+            actions.append({"type": "dedupe_traders", "params": {}})
+        if "extra_bots_running" in codes:
+            actions.append({"type": "kill_extra_bots", "params": {}})
         if _incident_trader_offline(incident):
             actions.append({"type": "start_trader", "params": {}})
         actions.extend(

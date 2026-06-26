@@ -2,7 +2,7 @@
 
 Autonomous **BloFin USDT perpetual futures** bot with a live dashboard, multi-provider LLM decisions, auto-harvest, and self-repair.
 
-**AI agents:** read **[ReadMe.tx](ReadMe.tx)** first — includes a **CORRECTION** section at the top if you received an older emailed setup prompt (verify E2E, then stop; user starts via desktop). Users may **paste API keys in chat**; agent writes them to local gitignored files.
+**AI agents:** read **[ReadMe.tx](ReadMe.tx)** first — agents must **explicitly create** desktop Start/Stop shortcuts (`scripts\create_desktop_shortcuts.ps1`). Stack self-repair: `trader/stack_fix.py`.
 
 ## Quick start (Windows)
 

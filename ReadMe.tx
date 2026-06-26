@@ -52,8 +52,6 @@ Default target equity: $1,000,000 (game mode, micro account friendly)
 ================================================================================
 *** AI AGENTS: ASK THE USER BEFORE YOU RUN ANYTHING ***
 ================================================================================
-You MUST NOT assume credentials exist. Before install/start, ask the human:
-
 You MUST NOT assume credentials exist. Before install/start, ask the human.
 They may paste keys directly in this chat (preferred for setup) OR give a file path.
 
@@ -109,18 +107,31 @@ They may paste keys directly in this chat (preferred for setup) OR give a file p
      You are helping with technical setup, not legal advice.
 
   D) Confirm files exist before start:
-     - credentials/blofin.txt populated
+     - credentials/blofin.txt populated (or Downloads compendium auto-discovered)
      - .env with OPENROUTER_API_KEY (or fallback LLM key)
      - VPN connected to allowed exit (if needed)
 
-  E) AGENT FINISH PROTOCOL (after install)
-     1. Start stack once (launcher or stack_launcher.py start)
-     2. Verify end-to-end: /api/health, /api/stack/status (trader online),
-        /api/status (equity), dashboard UI, desktop shortcuts exist
-     3. STOP stack: launcher\Stop LLM KnightTrader.bat or
+  E) DESKTOP LAUNCHER + STOPPER (mandatory — explicit step, do not skip)
+     You MUST create both Windows desktop shortcuts during setup.
+     Do NOT assume stack_launcher created them — run this yourself and verify:
+
+       powershell -NoProfile -ExecutionPolicy Bypass -File scripts\create_desktop_shortcuts.ps1
+
+     Verify on the user's Desktop (OneDrive Desktop is OK):
+       Start LLM KnightTrader.lnk  → launcher\Start LLM KnightTrader.bat
+       Stop LLM KnightTrader.lnk   → launcher\Stop LLM KnightTrader.bat
+
+     If missing, re-run the script until both .lnk files exist.
+
+  F) AGENT FINISH PROTOCOL (after install)
+     1. Create desktop shortcuts (section E) — verify both .lnk on Desktop
+     2. Start stack once (launcher or stack_launcher.py start)
+     3. Verify end-to-end: /api/health, /api/stack/status (trader online),
+        /api/status (equity), dashboard UI
+     4. STOP stack: launcher\Stop LLM KnightTrader.bat or
         python scripts\stack_launcher.py stop
-     4. Confirm is_entire_stack_stopped() is True
-     5. Tell user: setup done — use desktop Start/Stop only from now on
+     5. Confirm is_entire_stack_stopped() is True
+     6. Tell user: setup done — use desktop Start/Stop only from now on
      Do NOT leave dashboard or trader running when you finish.
 
 ================================================================================
@@ -229,9 +240,10 @@ KNIGHTTRADER_MAX_LEVERAGE    Default 50
 ================================================================================
 
 AFTER INSTALL — AI AGENT MUST:
-  1. Start once and verify end-to-end (health, stack status, equity, dashboard UI)
-  2. Run STOP (desktop Stop shortcut or python scripts\stack_launcher.py stop)
-  3. Confirm entire stack stopped — hand off to user
+  1. EXPLICITLY create desktop shortcuts (section E above) — do not skip
+  2. Start once and verify end-to-end (health, stack status, equity, dashboard UI)
+  3. Run STOP (desktop Stop shortcut or python scripts\stack_launcher.py stop)
+  4. Confirm entire stack stopped — hand off to user
   User daily use: only double-click desktop Start / Stop. Nothing auto-runs on login.
 
 START — desktop icon "Start LLM KnightTrader"
@@ -305,11 +317,22 @@ Dashboard background:
   - Stack watchdog (~30s): trader offline → start_single_trader()
   - Activity WebSocket to UI
 
-Repair policy (trader/repair.py):
-  - Script first (deterministic playbooks)
+Repair policy (trader/repair.py + trader/stack_fix.py):
+  - Script first (deterministic playbooks in stack_fix.STACK_FIX_PLAYBOOK)
+  - Stack watchdog (~30s): trader offline, duplicates, missing shortcuts, account drift
   - Repair LLM for novel issues (trade failures, bugs, harvest gaps)
   - No short timeouts — parallel LLM workers race until response
   - Known maintenance (stale cache) stays script-only
+
+Stack self-repair (watchdog + repair actions):
+  trader_offline          → start_trader
+  trader_duplicate        → dedupe_traders (+ start_trader if needed)
+  extra_bots_running      → kill_extra_bots
+  desktop_shortcuts_missing → create_desktop_shortcuts
+  account drift/stale     → bootstrap_account_cache + refresh_account
+  credentials_missing     → ask user (cannot auto-fix) — paste keys in chat or file path
+  Full cold restart       → python scripts\stack_launcher.py start
+  Full stop               → python scripts\stack_launcher.py stop
 
 NTP / harvest:
   position_ntp_pct = unrealizedPnlRatio * 100  (exchange field)
@@ -340,8 +363,18 @@ LLM all providers failed:
   - llm.wait_for_provider blocks until cooldown clears
 
 Duplicate traders:
-  - Click Restart bots on dashboard
-  - python scripts\kill_agents.py
+  - Watchdog/repair: dedupe_traders action (automatic)
+  - Or click Restart bots on dashboard
+  - Or python scripts\stack_launcher.py start (cold restart)
+
+Missing desktop shortcuts:
+  - powershell -NoProfile -ExecutionPolicy Bypass -File scripts\create_desktop_shortcuts.ps1
+  - Watchdog auto-creates when dashboard is running (desktop_shortcuts_missing)
+
+Credentials not found:
+  - Auto-discovery: BLOFIN_CREDENTIALS_PATH, credentials/blofin.txt,
+    Downloads\MK Blo Hermes API compendium.txt
+  - Agent: ask user to paste keys in chat → write local gitignored files
 
 ================================================================================
 8. DEVELOPMENT & GIT AUTO-SYNC
@@ -371,7 +404,8 @@ Share prompt for new users/agents: SHARE_PROMPT.txt (copy-paste to any AI)
 [ ] ASK USER: home country + ProtonVPN exit country (if VPN needed)
 [ ] Confirm VPN exit is NOT a BloFin-restricted country (see section above)
 [ ] Python 3.12+ and pip install -r requirements.txt
-[ ] Start once → verify E2E (health, stack/status, equity, dashboard, shortcuts)
+[ ] EXPLICITLY create desktop Start + Stop shortcuts (scripts\create_desktop_shortcuts.ps1)
+[ ] Start once → verify E2E (health, stack/status, equity, dashboard, shortcuts on Desktop)
 [ ] STOP stack (Stop shortcut or stack_launcher.py stop) — confirm fully stopped
 [ ] Tell user: daily control is desktop Start LLM KnightTrader / Stop only
 [ ] After code changes: commit + push (or rely on auto_sync hook)

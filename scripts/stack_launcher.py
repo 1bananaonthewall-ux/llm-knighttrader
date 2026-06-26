@@ -17,6 +17,7 @@ if str(ROOT) not in sys.path:
 
 from config import DASHBOARD_HOST, DASHBOARD_PORT, PID_DIR
 from trader.stack_control import (
+    ensure_desktop_shortcuts,
     _enumerate_python_processes,
     _kill_pid,
     _module_pids,
@@ -63,14 +64,9 @@ def _wait_dashboard_health(timeout_sec: float = 30.0) -> bool:
 
 
 def _ensure_desktop_shortcuts() -> None:
-    script = ROOT / "scripts" / "create_desktop_shortcuts.ps1"
-    if not script.is_file():
-        return
-    subprocess.run(
-        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
-        cwd=str(ROOT),
-        check=False,
-    )
+    result = ensure_desktop_shortcuts()
+    if not result.get("ok"):
+        print(f"Warning: desktop shortcuts — {result.get('error', 'failed')}")
 
 
 def stop_stack() -> int:

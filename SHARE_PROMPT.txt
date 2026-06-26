@@ -55,10 +55,13 @@ STEP 2 — SET UP (follow ReadMe.tx)
   copy .env.example .env
   (fill credentials/blofin.txt and .env from my files — see Step 1A)
 
+  DESKTOP SHORTCUTS (mandatory — run explicitly, do not skip):
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts\create_desktop_shortcuts.ps1
+  Verify on my Desktop: "Start LLM KnightTrader.lnk" and "Stop LLM KnightTrader.lnk"
+
   Start (verification run only — you will stop it in Step 4):
   launcher\Start LLM KnightTrader.bat
   OR: python scripts\stack_launcher.py start --open-browser
-  (creates "Start LLM KnightTrader" and "Stop LLM KnightTrader" on desktop)
 
   Dashboard: http://127.0.0.1:8765
 
@@ -102,6 +105,7 @@ STEP 4 — STOP AND HAND OFF (mandatory — do not skip)
 RULES FOR YOU (the agent)
 
 - Read ReadMe.tx end-to-end before improvising.
+- EXPLICITLY create desktop Start + Stop shortcuts (create_desktop_shortcuts.ps1) — verify both .lnk exist.
 - Ask for credentials in chat (paste keys) OR file path — write to credentials/blofin.txt and .env locally.
 - Verify end-to-end (Step 3), then STOP (Step 4) — user starts via desktop only after that.
 - Do not push API keys to GitHub.

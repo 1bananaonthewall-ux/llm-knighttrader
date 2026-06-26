@@ -13,20 +13,35 @@ Private 1:1 agent chat is fine for keys during setup. Never commit secrets or po
 ProtonVPN Free: use **Netherlands, Switzerland, Poland, Romania, Norway, or Japan** for BloFin.  
 Do **not** use **US, Canada, Singapore, or Mexico** as VPN exit for BloFin.
 
-First successful start creates desktop shortcuts: **Start LLM KnightTrader** and **Stop LLM KnightTrader**.
+## Desktop launcher + stopper (mandatory)
+
+You **must explicitly create** both desktop shortcuts during setup — do not skip or assume they exist:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\create_desktop_shortcuts.ps1
+```
+
+Verify on the user's Desktop:
+- **Start LLM KnightTrader.lnk**
+- **Stop LLM KnightTrader.lnk**
+
+`stack_launcher.py start` also runs this script, but **you must run it yourself** and confirm both files exist.
 
 ## Agent finish protocol (mandatory)
 
-1. **Start** stack once (`launcher\Start LLM KnightTrader.bat` or `python scripts\stack_launcher.py start`)
-2. **Verify end-to-end:**
+1. **Create** desktop Start + Stop shortcuts (command above)
+2. **Start** stack once (`launcher\Start LLM KnightTrader.bat` or `python scripts\stack_launcher.py start`)
+3. **Verify end-to-end:**
    - `GET /api/health` → ok
    - `GET /api/stack/status` → trader `online`, count 1
    - `GET /api/status` → equity/available sane
-   - Dashboard loads; desktop shortcuts exist
-3. **Stop** stack: `launcher\Stop LLM KnightTrader.bat` or `python scripts\stack_launcher.py stop`
-4. Confirm: `python -c "from trader.stack_control import is_entire_stack_stopped; print(is_entire_stack_stopped())"` → `True`
-5. Tell user setup is complete — **they** start daily via desktop **Start LLM KnightTrader** only
+   - Dashboard loads; both desktop shortcuts on Desktop
+4. **Stop** stack: `launcher\Stop LLM KnightTrader.bat` or `python scripts\stack_launcher.py stop`
+5. Confirm: `python -c "from trader.stack_control import is_entire_stack_stopped; print(is_entire_stack_stopped())"` → `True`
+6. Tell user setup is complete — **they** start daily via desktop **Start LLM KnightTrader** only
 
 **Do not** leave trader/dashboard running. **Do not** add startup tasks or background monitors.
+
+Stack self-repair: see `trader/stack_fix.py` — watchdog and repair LLM use this playbook automatically.
 
 Share prompt: **[SHARE_PROMPT.txt](SHARE_PROMPT.txt)**
