@@ -718,12 +718,67 @@ def run_novel_investigation(
 
             confidence = int(plan.get("confidence") or 0)
             if phase == "fix" and plan.get("file") and plan.get("search_text") and confidence >= 50:
-                ok = apply_source_patch(
-                    str(plan["file"]),
-                    str(plan["search_text"]),
-                    str(plan.get("replace_text") or ""),
-                    label=label,
-                )
+                rel_file = str(plan["file"]).strip()
+                search_text = str(plan["search_text"])
+                replace_text = str(plan.get("replace_text") or "")
+
+                # Safety gate: require explicit user confirmation before editing dashboard files.
+                def _is_dashboard_rel_path(p: str) -> bool:
+                    n = (p or "").replace("\\", "/").strip()
+                    return n.startswith("dashboard/")
+
+                if _is_dashboard_rel_path(rel_file):
+                    fp_src = f"dashboard_patch:{rel_file}:{hashlib.sha1(search_text.encode('utf-8','ignore')).hexdigest()}:{hashlib.sha1(replace_text.encode('utf-8','ignore')).hexdigest()}"
+                    patch_fp = hashlib.sha1(fp_src.encode("utf-8", "ignore")).hexdigest()[:16]
+
+                    # Request confirmation if it hasn't already been confirmed recently.
+                    # (We don't persist confirmation state in memory to keep behavior simple across restarts.)
+                    already = False
+                    try:
+                        recent = get_recent(limit=250)
+                        for ev in recent:
+                            if str(ev.get("title") or "") == "Dashboard patch confirmed" and str(ev.get("detail") or "") == patch_fp:
+                                already = True
+                                break
+                    except Exception:
+                        already = False
+
+                    if not already:
+                        log_event(
+                            "system",
+                            "Dashboard patch confirmation request",
+                            patch_fp,
+                            {
+                                "source": "repair_agent",
+                                "rel_path": rel_file,
+                                "search_excerpt": search_text[:220],
+                                "replace_excerpt": replace_text[:220],
+                            },
+                        )
+
+                        # Wait for user confirmation in dashboard chat (confirm:<fingerprint>).
+                        # If no confirmation arrives, we skip the patch to stay safe.
+                        timeout_sec = 600.0
+                        poll_sec = 3.0
+                        t0 = time.time()
+                        while time.time() - t0 < timeout_sec:
+                            try:
+                                recent2 = get_recent(limit=250)
+                                for ev in recent2:
+                                    if str(ev.get("title") or "") == "Dashboard patch confirmed" and str(ev.get("detail") or "") == patch_fp:
+                                        already = True
+                                        break
+                                if already:
+                                    break
+                            except Exception:
+                                pass
+                            time.sleep(poll_sec)
+
+                    if not already:
+                        log_warn(label, "Dashboard patch skipped (no confirmation)", f"{rel_file} fp={patch_fp}")
+                        continue
+
+                ok = apply_source_patch(rel_file, search_text, replace_text, label=label)
                 if ok:
                     state["repairs_succeeded"] += 1
                     fixed = True

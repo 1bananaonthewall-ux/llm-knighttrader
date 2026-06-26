@@ -378,10 +378,34 @@ def _run_chat(req: ChatRequest) -> dict[str, Any]:
     save_state(state)
     log_event("chat", "You", req.message, {"status": "received", "wired_to_trader": True})
 
+    def _is_patch_confirmation_message(msg: str) -> str | None:
+        # User explicitly confirms a dashboard patch fingerprint so repair techs may apply it.
+        # Expected: confirm:<fingerprint>
+        m = (msg or "").strip()
+        low = m.lower()
+        if not (low.startswith("confirm:") or low.startswith("confirm ")):
+            return None
+        fp = m.split(":", 1)[1] if ":" in m else m.split(" ", 1)[1]
+        fp = (fp or "").strip()
+        return fp or None
+
     def _is_manual_repair_message(msg: str) -> bool:
         m = (msg or "").strip().lower()
         # Explicit "repair/stop trading and fix" commands to avoid accidental trading actions.
         return m.startswith("repair:") or m.startswith("fix:") or m.startswith("repair ") or m.startswith("fix ")
+
+    confirmed_fp = _is_patch_confirmation_message(req.message)
+    if confirmed_fp:
+        log_event(
+            "system",
+            "Dashboard patch confirmed",
+            confirmed_fp,
+            {"source": "dashboard_chat"},
+        )
+        reply = f"Confirmed dashboard patch `{confirmed_fp}`. Repair techs may proceed."
+        append_chat(state, "assistant", reply)
+        save_state(state)
+        return {"reply": reply, "dashboard_patch_confirmed": confirmed_fp}
 
     if _is_manual_repair_message(req.message):
         # Queue: repair techs watch for this in the activity log.
