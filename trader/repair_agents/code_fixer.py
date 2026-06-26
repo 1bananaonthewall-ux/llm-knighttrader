@@ -30,6 +30,7 @@ from trader.repair_agent import (
     log_warn,
     llm_ask,
     maybe_autorepair_global,
+    check_account_early_and_repair,
     parse_llm_json,
     read_file_safe,
     run_novel_investigation,
@@ -159,6 +160,17 @@ def _restart_module(module: str) -> bool:
 
 
 def run_cycle(client, llm, state: dict) -> None:
+    # Early warning net: if dashboard account numbers are corrupted, fix them first.
+    try:
+        check_account_early_and_repair(
+            client,
+            llm,
+            state,
+            label=LABEL,
+        )
+    except Exception as exc:
+        log_warn(LABEL, "Early account check crashed", str(exc)[:200])
+
     bugs = _find_bugs()
     if not bugs:
         return

@@ -29,6 +29,7 @@ from trader.repair_agent import (
     maybe_autorepair_global,
     llm_ask,
     parse_llm_json,
+    check_account_early_and_repair,
     triage_with_repair_engine,
 )
 
@@ -119,6 +120,17 @@ def _trade_fingerprint(account: dict, errors: list[dict]) -> str:
 
 
 def run_cycle(client, llm, state: dict) -> None:
+    # Early warning net: fix corrupted dashboard account numbers ASAP.
+    try:
+        check_account_early_and_repair(
+            client,
+            llm,
+            state,
+            label=LABEL,
+        )
+    except Exception as exc:
+        log_warn(LABEL, "Early account check crashed", str(exc)[:200])
+
     account = _get_account_snapshot(client)
     if not account:
         return

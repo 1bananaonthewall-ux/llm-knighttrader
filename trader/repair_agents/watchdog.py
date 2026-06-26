@@ -29,6 +29,7 @@ from trader.repair_agent import (
     log,
     log_warn,
     maybe_autorepair_global,
+    check_account_early_and_repair,
     run_novel_investigation,
     triage_with_repair_engine,
 )
@@ -144,6 +145,17 @@ def run_cycle(client, llm, state: dict) -> None:
 
     # Step 1: deterministic reconcile (kill dupes, start offline trader)
     reconcile = reconcile_stack(allow_start_trader=True)
+
+    # Early warning net: correct corrupted dashboard account numbers ASAP.
+    try:
+        check_account_early_and_repair(
+            client,
+            llm,
+            state,
+            label=LABEL,
+        )
+    except Exception as exc:
+        log_warn(LABEL, "Early account check crashed", str(exc)[:200])
 
     evidence = _gather_evidence()
     fp = _fingerprint(evidence)

@@ -25,7 +25,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from activity_log import get_recent, load_history, log_event
-from config import DATA_DIR, PID_DIR, PROJECT_ROOT
+from config import ACCOUNT_REFRESH_SEC, DATA_DIR, PID_DIR, PROJECT_ROOT
 from llm.wrapper import LLMWrapper
 
 AGENT_ERR_LOG = DATA_DIR / "logs" / "repair_agent.err"
@@ -817,6 +817,102 @@ def maybe_autorepair_global(
             seen.setdefault(fp, time.time())
 
     return ok_any
+
+
+def check_account_early_and_repair(
+    client: Any,
+    llm: LLMWrapper,
+    state: dict[str, Any],
+    *,
+    label: str,
+    max_age_mult: float = 4.0,
+    cooldown_sec: float = 300.0,
+) -> bool:
+    """
+    Early warning net: if equity/available/margin-like numbers or drift look corrupted,
+    correct the dashboard stream immediately (deterministic first), and only then
+    escalate to the full repair engine if still unresolved.
+    """
+    try:
+        from blofin.account_cache import (
+            _account_display_sane,  # internal but stable in this repo
+            cache_age_sec,
+            guard_account_stream,
+            is_rate_limited,
+            read_account_cached,
+            stream_drift_issues,
+        )
+    except Exception as exc:
+        log_warn(label, "Early account check import failed", str(exc)[:200])
+        return False
+
+    # Cooldown per-process to avoid hammering API/cache operations.
+    meta = state.setdefault("_early_account_meta", {})
+    last_ts = float(meta.get("last_ts") or 0)
+    if time.time() - last_ts < cooldown_sec:
+        return False
+
+    snap = read_account_cached() or {}
+    equity = float(snap.get("equity") or 0)
+    available = float(snap.get("available") or 0)
+    issues: list[dict[str, Any]] = []
+
+    try:
+        sane, reason = _account_display_sane(snap)
+        if not sane and reason:
+            issues.append({"code": reason, "detail": f"equity={equity} available={available}"})
+    except Exception as exc:
+        issues.append({"code": "account_display_sane_error", "detail": str(exc)[:200]})
+
+    try:
+        if is_rate_limited():
+            issues.append(
+                {"code": "account_rate_limited", "detail": "BloFin cooldown / rate limit active"}
+            )
+    except Exception:
+        pass
+
+    try:
+        age = float(cache_age_sec())
+        if age > max(ACCOUNT_REFRESH_SEC * max_age_mult, 60):
+            issues.append({"code": "account_cache_stale", "detail": f"cache age {int(age)}s"})
+    except Exception:
+        pass
+
+    try:
+        drift = stream_drift_issues()
+        if drift:
+            issues.append({"code": "live_stream_drift", "detail": str(drift[:3])[:200]})
+    except Exception:
+        pass
+
+    if not issues:
+        return False
+
+    meta["last_ts"] = time.time()
+    log_warn(label, "Early account anomaly detected", "; ".join(i["code"] for i in issues)[:200])
+
+    # Deterministic fix first: align stream with live BloFin if needed.
+    try:
+        guard = guard_account_stream()
+        if guard.get("ok") and (guard.get("refreshed") or guard.get("live_verified")):
+            state["repairs_succeeded"] += 1
+            return True
+    except Exception as exc:
+        log_warn(label, "Early deterministic stream repair failed", str(exc)[:200])
+
+    # If guard didn't resolve it, escalate to full repair triage once.
+    try:
+        incident = {
+            "phase": "proactive_anomaly",
+            "error": f"account_anomaly: equity={equity} available={available}",
+            "issues": issues,
+        }
+        result = triage_with_repair_engine(client, llm, state, incident, label=label)
+        return bool(result and (result.recovered or result.actions_taken))
+    except Exception as exc:
+        log_warn(label, "Early repair escalation failed", str(exc)[:200])
+        return False
 
 
 def kill_agent_process() -> int:
