@@ -176,6 +176,19 @@ def run_cycle(client, llm, state: dict) -> None:
     if not errors and not missing_positions and len(positions) <= 5:
         return
 
+    def _last_tpsl_error_for_inst(inst_id: str) -> str:
+        if not inst_id:
+            return ""
+        for e in reversed(errors or []):
+            title = str(e.get("title") or "")
+            detail = str(e.get("detail") or "")
+            if inst_id in title or inst_id in detail:
+                # Prefer explicit TP/SL-related failures.
+                blob = f"{title} {detail}".lower()
+                if "tpsl" in blob or "tp" in blob or "sl" in blob or "trigger" in blob:
+                    return detail[:900]
+        return ""
+
     seen = state.setdefault("trade_fingerprints", {})
     if isinstance(seen, list):
         seen = {}
@@ -274,12 +287,23 @@ def run_cycle(client, llm, state: dict) -> None:
             else:
                 contracts = str(sz_abs if sz_abs > 0 else sz_raw)
 
+            lever_raw = pos.get("lever", pos.get("leverage", 3))
+            try:
+                leverage = int(float(lever_raw))
+            except (TypeError, ValueError):
+                leverage = 3
+
+            last_tpsl_err = _last_tpsl_error_for_inst(inst)
+
             incident = {
                 "phase": "tpsl_failed",
-                "error": f"missing TP/SL on {inst}",
+                # Include the most recent TP/SL rejection text (if any),
+                # so the deterministic repair plan can react to margin/mode issues.
+                "error": last_tpsl_err or f"missing TP/SL on {inst}",
                 "instId": inst,
                 "side": side,
                 "contracts": contracts,
+                "leverage": leverage,
             }
             result = triage_with_repair_engine(client, llm, state, incident, label=LABEL)
             if result and result.recovered:

@@ -87,6 +87,10 @@ REPAIR_ACTION_CATALOG = [
         "description": "Set BloFin position mode to net_mode (fixes 102089 / positionSide errors).",
     },
     {
+        "type": "set_leverage",
+        "description": "Set leverage for a given instrument. params: instId, leverage.",
+    },
+    {
         "type": "wait_seconds",
         "description": "Pause before retry — rate limits, order settlement. params: seconds (max 90).",
     },
@@ -659,6 +663,17 @@ def execute_repair_action(
         ok = mode in ("net_mode", "net")
         return "ensure_net_mode", ok, mode
 
+    if atype == "set_leverage":
+        inst = str(params.get("instId") or "").strip()
+        leverage = int(params.get("leverage") or 0)
+        if not inst or leverage <= 0:
+            return "set_leverage", False, {"error": "missing instId/leverage"}
+        try:
+            client.set_leverage(inst, leverage)
+            return "set_leverage", True, {"instId": inst, "leverage": leverage}
+        except Exception as exc:
+            return "set_leverage", False, {"error": str(exc)[:200]}
+
     if atype == "wait_seconds":
         sec = min(float(params.get("seconds") or 15), 300.0)
         time.sleep(sec)
@@ -858,25 +873,43 @@ def _deterministic_repair_plan(incident: dict[str, Any]) -> dict[str, Any] | Non
         }
 
     if phase == "tpsl_failed" and inst:
-        return {
-            "diagnosis": "TP/SL rejected vs live mark — retry with fresh mark price",
-            "actions": [
-                {"type": "refresh_account", "params": {}},
-                {
-                    "type": "retry_tpsl",
-                    "params": {
-                        "instId": inst,
-                        "side": incident.get("side"),
-                        "contracts": incident.get("contracts"),
-                        "price": incident.get("price"),
-                        "tp_pct": incident.get("tp_pct", 2.0),
-                        "sl_pct": incident.get("sl_pct", 1.0),
-                        "leverage": incident.get("leverage", 3),
-                    },
+        actions: list[dict[str, Any]] = [
+            {"type": "refresh_account", "params": {}},
+        ]
+
+        # If we learned (from incident.error) that leverage/mode is wrong,
+        # fix it before retrying the actual attach.
+        if "102089" in err or "positionside" in err:
+            actions.insert(0, {"type": "ensure_net_mode", "params": {}})
+
+        leverage_current = int(incident.get("leverage") or 3)
+        leverage_next = next((l for l in LEVERAGE_LADDER if l > leverage_current and l <= TRADE_MAX_LEVERAGE), None)
+        if leverage_next is not None and ("103003" in err or "margin" in err):
+            actions.append(
+                {"type": "set_leverage", "params": {"instId": inst, "leverage": leverage_next}}
+            )
+            leverage_current = leverage_next
+
+        actions.append(
+            {
+                "type": "retry_tpsl",
+                "params": {
+                    "instId": inst,
+                    "side": incident.get("side"),
+                    "contracts": incident.get("contracts"),
+                    "price": incident.get("price"),
+                    "tp_pct": incident.get("tp_pct", 2.0),
+                    "sl_pct": incident.get("sl_pct", 1.0),
+                    "leverage": leverage_current,
                 },
-            ],
+            }
+        )
+
+        return {
+            "diagnosis": "TP/SL repair — refresh account + normalize mode/leverage, then retry attach",
+            "actions": actions[:5],
             "retry_original": True,
-            "strategy_note": "TP/SL uses live mark not scan price",
+            "strategy_note": "Fix leverage/mode if margin or positionSide issues seen",
         }
 
     if phase == "close_failed" and inst:
